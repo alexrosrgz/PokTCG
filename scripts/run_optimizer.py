@@ -9,119 +9,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from poktcg.cards.card_db import get_card_db
 from poktcg.optimizer.deck import Deck
 from poktcg.optimizer.genetic import GeneticOptimizer, OptimizerConfig
+from poktcg.optimizer.coevolution import CoevolutionOptimizer, CoevolutionConfig
 from poktcg.optimizer.simulator import Simulator
 from poktcg.optimizer.analysis import matchup_table, deck_report
-
-
-def find(name):
-    db = get_card_db()
-    cards = db.find_by_name(name)
-    return cards[0].id if cards else None
-
-
-def make_haymaker() -> Deck:
-    """Classic Haymaker deck."""
-    cards = {}
-    cards[find("Hitmonchan")] = 4
-    cards[find("Electabuzz")] = 4
-    scyther = find("Scyther")
-    if scyther:
-        cards[scyther] = 3
-
-    cards[find("Bill")] = 4
-    cards[find("Professor Oak")] = 3
-    cards[find("Energy Removal")] = 4
-    cards[find("Super Energy Removal")] = 2
-    cards[find("Gust of Wind")] = 3
-    cards[find("PlusPower")] = 4
-    cards[find("Switch")] = 2
-    cards[find("Computer Search")] = 2
-
-    db = get_card_db()
-    fighting = [c for c in db.all_energy() if "Fighting" in c.name][0].id
-    lightning = [c for c in db.all_energy() if "Lightning" in c.name][0].id
-    grass = [c for c in db.all_energy() if "Grass" in c.name][0].id
-
-    cards[fighting] = 12
-    cards[lightning] = 7
-    if scyther:
-        cards[grass] = 6
-    else:
-        cards[lightning] = 13
-
-    cards = {k: v for k, v in cards.items() if k and v > 0}
-    return Deck(cards=cards)
-
-
-def make_raindance() -> Deck:
-    """Rain Dance (Blastoise) deck."""
-    cards = {}
-    cards[find("Squirtle")] = 4
-    cards[find("Wartortle")] = 1
-    cards[find("Blastoise")] = 3
-    lapras = find("Lapras")
-    if lapras:
-        cards[lapras] = 3
-
-    cards[find("Bill")] = 4
-    cards[find("Professor Oak")] = 3
-    cards[find("Pokémon Breeder")] = 4
-    cards[find("Computer Search")] = 3
-    cards[find("Energy Retrieval")] = 3
-    cards[find("Switch")] = 2
-    cards[find("Gust of Wind")] = 2
-
-    db = get_card_db()
-    water = [c for c in db.all_energy() if "Water" in c.name][0].id
-    cards[water] = 28
-
-    cards = {k: v for k, v in cards.items() if k and v > 0}
-
-    # Adjust to 60
-    total = sum(cards.values())
-    if total < 60:
-        cards[water] += 60 - total
-    elif total > 60:
-        cards[water] -= total - 60
-
-    return Deck(cards=cards)
-
-
-def make_damage_swap() -> Deck:
-    """Alakazam/Damage Swap control deck."""
-    cards = {}
-    cards[find("Abra")] = 4
-    cards[find("Kadabra")] = 2
-    cards[find("Alakazam")] = 3
-    chansey = find("Chansey")
-    if chansey:
-        cards[chansey] = 3
-
-    cards[find("Bill")] = 4
-    cards[find("Professor Oak")] = 3
-    cards[find("Pokémon Breeder")] = 3
-    cards[find("Computer Search")] = 3
-    cards[find("Switch")] = 2
-    cards[find("Pokémon Center")] = 2
-    cards[find("Gust of Wind")] = 2
-    mr_mime = find("Mr. Mime")
-    if mr_mime:
-        cards[mr_mime] = 3
-
-    db = get_card_db()
-    psychic = [c for c in db.all_energy() if "Psychic" in c.name][0].id
-    colorless_e = [c for c in db.all_energy() if "Colorless" in c.name]
-
-    cards[psychic] = 20
-
-    cards = {k: v for k, v in cards.items() if k and v > 0}
-    total = sum(cards.values())
-    if total < 60:
-        cards[psychic] += 60 - total
-    elif total > 60:
-        cards[psychic] -= total - 60
-
-    return Deck(cards=cards)
+from poktcg.optimizer.archetypes import make_haymaker, make_raindance, make_damage_swap
 
 
 def main():
@@ -186,5 +77,80 @@ def main():
         print(f"  Best vs {name}: {result.win_rate*100:.1f}%")
 
 
+def run_coevolution():
+    db = get_card_db()
+    print(f"Loaded {len(db)} cards")
+
+    # Create seed decks
+    haymaker = make_haymaker()
+    raindance = make_raindance()
+    damage_swap = make_damage_swap()
+
+    seed_decks = [haymaker, raindance, damage_swap]
+    seed_names = ["Haymaker", "Raindance", "Damage Swap"]
+
+    # Validate
+    for name, deck in zip(seed_names, seed_decks):
+        valid, err = deck.validate()
+        print(f"{name}: {deck.total_cards()} cards, valid={valid}" +
+              (f" ({err})" if err else ""))
+
+    # Run coevolution optimizer
+    print("\n=== Running Coevolution Optimizer ===")
+    config = CoevolutionConfig(
+        population_size=30,
+        generations=30,
+        games_per_eval=20,
+        mutation_rate=0.3,
+        elite_ratio=0.1,
+        num_workers=6,
+        hof_size=10,
+        hof_weight=0.4,
+        hof_add_interval=3,
+        games_per_hof_eval=20,
+        self_play_opponents=4,
+        final_tournament_games=50,
+        diversity_bonus=0.03,
+        novelty_threshold=0.20,
+    )
+
+    optimizer = CoevolutionOptimizer(config=config, seed=42)
+    start = time.time()
+    results = optimizer.run(seed_decks=seed_decks, verbose=True)
+    elapsed = time.time() - start
+
+    print(f"\nCoevolution complete in {elapsed/60:.1f} minutes")
+    print(f"\n=== Top 3 Decks ===")
+    for i, (deck, fitness) in enumerate(results[:3]):
+        print(f"\n--- #{i+1} (win rate: {fitness*100:.1f}%) ---")
+        print(deck.summary())
+
+    # Final matchup table: best coevolved deck vs seed decks
+    best_deck = results[0][0]
+    sim = Simulator(num_workers=6)
+    print(f"\n=== Best Coevolved Deck vs Seed Archetypes ===")
+    for name, seed_deck in zip(seed_names, seed_decks):
+        result = sim.evaluate_matchup(best_deck, seed_deck, num_games=100)
+        print(f"  Best vs {name}: {result.win_rate*100:.1f}%")
+
+    # Full matchup table of top decks + HoF
+    top_for_table = [r[0] for r in results[:5]]
+    top_names = [f"#{i+1}" for i in range(len(top_for_table))]
+    all_decks = top_for_table + seed_decks
+    all_names = top_names + seed_names
+
+    print(f"\n=== Full Matchup Table ===")
+    print(matchup_table(all_decks, all_names, games_per_pair=50))
+
+
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--coevolution", action="store_true",
+                        help="Run coevolution optimizer instead of genetic")
+    args = parser.parse_args()
+
+    if args.coevolution:
+        run_coevolution()
+    else:
+        main()

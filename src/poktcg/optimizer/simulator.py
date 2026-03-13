@@ -109,6 +109,23 @@ class Simulator:
             total_games += result.total
         return total_wins / max(1, total_games)
 
+    def batch_games(self, game_args: list[tuple[list[str], list[str], int]]
+                     ) -> list[tuple[int, int]]:
+        """Play many games in one ProcessPoolExecutor.map call.
+
+        Args:
+            game_args: list of (deck0_list, deck1_list, seed) tuples
+
+        Returns:
+            list of (winner, turns) tuples in the same order
+        """
+        if not game_args:
+            return []
+        if self.num_workers <= 1:
+            return [_play_single_game(a) for a in game_args]
+        with ProcessPoolExecutor(max_workers=self.num_workers) as pool:
+            return list(pool.map(_play_single_game, game_args))
+
     def round_robin(self, decks: list[Deck], games_per_pair: int = 20,
                      base_seed: int = 0) -> list[tuple[int, float]]:
         """Round-robin tournament. Returns [(deck_index, win_rate)] sorted by win rate."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from poktcg.cards.card_db import get_card_db
@@ -39,7 +40,8 @@ class GeneticOptimizer:
 
     def run(self, seed_decks: list[Deck] | None = None,
             opponent_decks: list[Deck] | None = None,
-            verbose: bool = True) -> list[tuple[Deck, float]]:
+            verbose: bool = True,
+            on_progress: Callable[[dict], None] | None = None) -> list[tuple[Deck, float]]:
         """Run the genetic algorithm.
 
         Args:
@@ -47,6 +49,8 @@ class GeneticOptimizer:
             opponent_decks: Fixed opponent field to evaluate against.
                           If None, evaluates within population (round-robin).
             verbose: Print progress
+            on_progress: Optional callback called each generation with
+                        {"gen", "total", "best_fitness", "avg_fitness"}
 
         Returns:
             List of (deck, fitness) sorted by fitness descending
@@ -80,11 +84,19 @@ class GeneticOptimizer:
 
             elapsed = time.time() - start
 
+            avg = sum(fitness) / len(fitness)
             if verbose:
-                avg = sum(fitness) / len(fitness)
                 print(f"Gen {gen+1}/{cfg.generations}: "
                       f"best={fitness[best_idx]:.3f} avg={avg:.3f} "
                       f"({elapsed:.1f}s)")
+
+            if on_progress:
+                on_progress({
+                    "gen": gen + 1,
+                    "total": cfg.generations,
+                    "best_fitness": fitness[best_idx],
+                    "avg_fitness": avg,
+                })
 
             # Create next generation
             elite_count = max(1, int(cfg.population_size * cfg.elite_ratio))
@@ -318,6 +330,20 @@ class GeneticOptimizer:
             basic = self.rng.choice(self._basic_pokemon)
             cards[basic] = cards.get(basic, 0) + 2
 
+        # Remove energy that doesn't match any Pokemon type in the deck
+        pokemon_types = set()
+        for cid in cards:
+            c = self.db.get(cid)
+            if c.is_pokemon:
+                pokemon_types.update(c.types)
+
+        if pokemon_types:
+            for cid in list(cards.keys()):
+                c = self.db.get(cid)
+                if c.is_energy and c.is_basic_energy:
+                    if not any(t in c.name for t in pokemon_types):
+                        del cards[cid]
+
         # Adjust total to 60
         total = sum(cards.values())
 
@@ -349,11 +375,6 @@ class GeneticOptimizer:
         elif total < 60:
             # Add energy to fill
             deficit = 60 - total
-            pokemon_types = set()
-            for cid in cards:
-                c = self.db.get(cid)
-                if c.is_pokemon:
-                    pokemon_types.update(c.types)
 
             matching = [eid for eid in self._basic_energy
                         if any(t in self.db.get(eid).name for t in pokemon_types)]

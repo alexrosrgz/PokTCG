@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PokTCG Deck Optimizer</title>
+<style>
+  :root {
+    --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
+    --accent: #e94560; --text: #eee; --muted: #999;
+    --green: #4ecca3; --red: #e94560; --yellow: #f0c929;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  h1 { text-align: center; margin: 20px 0 10px; font-size: 1.8em; }
+  h1 span { color: var(--accent); }
+  .subtitle { text-align: center; color: var(--muted); margin-bottom: 30px; font-size: 0.95em; }
+  h2 { margin: 20px 0 12px; font-size: 1.2em; border-bottom: 2px solid var(--accent); padding-bottom: 4px; display: inline-block; }
+
+  /* Config Form */
+  .config { background: var(--surface); padding: 24px; border-radius: 10px; margin-bottom: 24px; }
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.9em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .checkbox-group { display: flex; gap: 16px; flex-wrap: wrap; }
+  .checkbox-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: normal; text-transform: none; color: var(--text); font-size: 1em; letter-spacing: 0; }
+  .radio-group { display: flex; gap: 16px; flex-wrap: wrap; }
+  .radio-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: normal; text-transform: none; color: var(--text); font-size: 1em; letter-spacing: 0; }
+  select { background: var(--card); color: var(--text); border: 1px solid #333; padding: 8px 12px; border-radius: 6px; font-size: 1em; width: 100%; }
+  .counter-targets { margin-top: 8px; display: none; }
+  .counter-targets.visible { display: block; }
+  button.run { background: var(--accent); color: #fff; border: none; padding: 12px 32px; border-radius: 8px; font-size: 1.1em; cursor: pointer; font-weight: 600; transition: opacity 0.2s; display: block; margin: 20px auto 0; }
+  button.run:hover { opacity: 0.85; }
+  button.run:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Progress */
+  .progress-area { background: var(--surface); padding: 20px; border-radius: 10px; margin-bottom: 24px; display: none; }
+  .progress-area.visible { display: block; }
+  .progress-bar-wrap { background: var(--card); border-radius: 6px; height: 28px; overflow: hidden; margin-bottom: 12px; position: relative; }
+  .progress-bar { background: linear-gradient(90deg, var(--accent), var(--yellow)); height: 100%; width: 0%; transition: width 0.3s; border-radius: 6px; }
+  .progress-bar-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: 600; }
+  .log { max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85em; background: var(--bg); padding: 10px; border-radius: 6px; }
+  .log .status { color: var(--yellow); }
+  .log .gen { color: var(--green); }
+  .log .hof { color: var(--accent); }
+
+  /* Results */
+  .results-area { display: none; }
+  .results-area.visible { display: block; }
+  .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 768px) { .config-grid, .results-grid { grid-template-columns: 1fr; } }
+
+  /* Deck display */
+  .deck-panel { background: var(--surface); padding: 18px; border-radius: 10px; }
+  .deck-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .deck-header .fitness { font-size: 1.3em; font-weight: 700; color: var(--green); }
+  .deck-header .counts { font-size: 0.85em; color: var(--muted); }
+  .card-section { margin-bottom: 10px; }
+  .card-section h3 { font-size: 0.85em; color: var(--accent); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+  .card-row { display: flex; justify-content: space-between; padding: 3px 8px; font-size: 0.9em; border-radius: 4px; }
+  .card-row:nth-child(odd) { background: rgba(255,255,255,0.03); }
+  .card-row .card-name { flex: 1; }
+  .card-row .card-meta { color: var(--muted); font-size: 0.85em; }
+  .card-row .card-count { font-weight: 700; min-width: 28px; text-align: right; }
+
+  /* Tabs for top decks */
+  .deck-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .deck-tabs button { background: var(--card); color: var(--muted); border: none; padding: 6px 16px; border-radius: 6px 6px 0 0; cursor: pointer; font-weight: 600; }
+  .deck-tabs button.active { background: var(--accent); color: #fff; }
+
+  /* Matchup table */
+  .matchup-panel { background: var(--surface); padding: 18px; border-radius: 10px; }
+  table.matchup { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+  table.matchup th, table.matchup td { padding: 8px 12px; text-align: center; }
+  table.matchup th { color: var(--muted); font-size: 0.85em; text-transform: uppercase; }
+  table.matchup td { border-top: 1px solid rgba(255,255,255,0.05); font-weight: 600; }
+
+  /* Chart */
+  .chart-panel { background: var(--surface); padding: 18px; border-radius: 10px; }
+  canvas { width: 100%; height: 250px; display: block; }
+
+  /* Card frequency */
+  .freq-panel { background: var(--surface); padding: 18px; border-radius: 10px; }
+  .freq-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .freq-tag { background: var(--card); padding: 4px 12px; border-radius: 16px; font-size: 0.85em; }
+  .freq-tag.pokemon { border-left: 3px solid var(--accent); }
+  .freq-tag.trainer { border-left: 3px solid var(--yellow); }
+  .freq-tag.energy { border-left: 3px solid var(--green); }
+
+  .full-width { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Pok<span>TCG</span> Deck Optimizer</h1>
+  <p class="subtitle">Genetic algorithm deck builder for the Base-Fossil format</p>
+
+  <!-- Config -->
+  <div class="config">
+    <div class="config-grid">
+      <div>
+        <div class="form-group">
+          <label>Starting Archetypes</label>
+          <div class="checkbox-group">
+            <label><input type="checkbox" value="haymaker" checked> Haymaker</label>
+            <label><input type="checkbox" value="raindance" checked> Raindance</label>
+            <label><input type="checkbox" value="damage_swap" checked> Damage Swap</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Optimize For</label>
+          <div class="radio-group">
+            <label><input type="radio" name="mode" value="coevolution" checked> Best overall deck</label>
+            <label><input type="radio" name="mode" value="counter"> Best counter to...</label>
+          </div>
+          <div class="counter-targets" id="counterTargets">
+            <div class="checkbox-group" style="margin-top:8px">
+              <label><input type="checkbox" class="counter-cb" value="haymaker" checked> Haymaker</label>
+              <label><input type="checkbox" class="counter-cb" value="raindance"> Raindance</label>
+              <label><input type="checkbox" class="counter-cb" value="damage_swap"> Damage Swap</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="form-group">
+          <label>Search Depth</label>
+          <select id="depth">
+            <option value="quick">Quick (~1 min)</option>
+            <option value="normal" selected>Normal (~3 min)</option>
+            <option value="deep">Deep (~8 min)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Card Pool</label>
+          <select id="cardPool">
+            <option value="base">Base Set only</option>
+            <option value="base_jungle">Base + Jungle</option>
+            <option value="base_jungle_fossil">Base + Jungle + Fossil</option>
+            <option value="all" selected>All (+ Promos)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <button class="run" id="runBtn" onclick="startOptimization()">Run Optimizer</button>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-area" id="progressArea">
+    <h2>Progress</h2>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progressBar"></div>
+      <div class="progress-bar-text" id="progressText">0%</div>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-area" id="resultsArea">
+    <div class="results-grid">
+      <div class="deck-panel full-width">
+        <h2>Top Decks</h2>
+        <div class="deck-tabs" id="deckTabs"></div>
+        <div id="deckDisplay"></div>
+      </div>
+
+      <div class="matchup-panel">
+        <h2>Matchups vs Archetypes</h2>
+        <div id="matchupTable"></div>
+      </div>
+
+      <div class="freq-panel">
+        <h2>Common Cards (Top 3)</h2>
+        <div class="freq-list" id="freqList"></div>
+      </div>
+
+      <div class="chart-panel full-width">
+        <h2>Fitness Over Generations</h2>
+        <canvas id="fitnessChart" height="250"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Toggle counter targets visibility
+document.querySelectorAll('input[name="mode"]').forEach(r => {
+  r.addEventListener('change', () => {
+    document.getElementById('counterTargets').classList.toggle('visible', r.value === 'counter' && r.checked);
+  });
+});
+
+let currentResults = null;
+
+async function startOptimization() {
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+
+  const progressArea = document.getElementById('progressArea');
+  const resultsArea = document.getElementById('resultsArea');
+  progressArea.classList.add('visible');
+  resultsArea.classList.remove('visible');
+
+  const log = document.getElementById('log');
+  log.innerHTML = '';
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('progressText').textContent = '0%';
+
+  const archetypes = [...document.querySelectorAll('.checkbox-group input[type="checkbox"]:not(.counter-cb):checked')]
+    .map(cb => cb.value);
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const counterTargets = mode === 'counter'
+    ? [...document.querySelectorAll('.counter-cb:checked')].map(cb => cb.value)
+    : [];
+  const depth = document.getElementById('depth').value;
+  const cardPool = document.getElementById('cardPool').value;
+
+  const body = JSON.stringify({ archetypes, mode, counter_targets: counterTargets, depth, card_pool: cardPool });
+
+  try {
+    const response = await fetch('/api/optimize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      let eventType = null;
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ') && eventType) {
+          const data = JSON.parse(line.slice(6));
+          handleEvent(eventType, data);
+          eventType = null;
+        }
+      }
+    }
+  } catch (e) {
+    addLog('error', 'Connection error: ' + e.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Run Optimizer';
+}
+
+function handleEvent(type, data) {
+  if (type === 'generation') {
+    const pct = Math.round((data.gen / data.total) * 100);
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressText').textContent = `Gen ${data.gen}/${data.total} (${pct}%)`;
+    addLog('gen', `Gen ${data.gen}/${data.total}: best=${data.best_fitness.toFixed(3)} avg=${data.avg_fitness.toFixed(3)}`);
+  } else if (type === 'hof') {
+    addLog('hof', data.message);
+  } else if (type === 'status') {
+    addLog('status', data.message);
+  } else if (type === 'complete') {
+    document.getElementById('progressBar').style.width = '100%';
+    document.getElementById('progressText').textContent = 'Complete!';
+    addLog('status', 'Optimization complete!');
+    currentResults = data;
+    showResults(data);
+  } else if (type === 'error') {
+    addLog('status', 'Error: ' + data.message);
+  }
+}
+
+function addLog(cls, text) {
+  const log = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function showResults(data) {
+  const resultsArea = document.getElementById('resultsArea');
+  resultsArea.classList.add('visible');
+
+  // Deck tabs
+  const tabs = document.getElementById('deckTabs');
+  tabs.innerHTML = '';
+  data.decks.forEach((deck, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = `#${i + 1} (${(deck.fitness * 100).toFixed(1)}%)`;
+    btn.className = i === 0 ? 'active' : '';
+    btn.onclick = () => {
+      tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderDeck(deck, i);
+    };
+    tabs.appendChild(btn);
+  });
+
+  if (data.decks.length > 0) renderDeck(data.decks[0], 0);
+  renderMatchups(data.matchups);
+  renderFrequency(data.common_cards);
+  renderChart(data.fitness_history);
+}
+
+function renderDeck(deck, index) {
+  const el = document.getElementById('deckDisplay');
+  const pokemon = deck.cards.filter(c => c.supertype === 'Pokémon').sort((a, b) => a.name.localeCompare(b.name));
+  const trainers = deck.cards.filter(c => c.supertype === 'Trainer').sort((a, b) => a.name.localeCompare(b.name));
+  const energy = deck.cards.filter(c => c.supertype === 'Energy').sort((a, b) => a.name.localeCompare(b.name));
+
+  let html = `<div class="deck-header">
+    <div class="fitness">${(deck.fitness * 100).toFixed(1)}% win rate</div>
+    <div class="counts">${deck.total_cards} cards: ${deck.pokemon_count}P / ${deck.trainer_count}T / ${deck.energy_count}E</div>
+  </div>`;
+
+  html += renderCardSection('Pokemon', pokemon, c => {
+    const meta = [];
+    if (c.hp) meta.push(c.hp + 'HP');
+    if (c.types && c.types.length) meta.push(c.types.join('/'));
+    if (c.subtypes && c.subtypes.length) meta.push(c.subtypes.join(' '));
+    return meta.join(' · ');
+  });
+
+  html += renderCardSection('Trainers', trainers, () => '');
+  html += renderCardSection('Energy', energy, () => '');
+
+  el.innerHTML = html;
+}
+
+function renderCardSection(title, cards, metaFn) {
+  if (!cards.length) return '';
+  let html = `<div class="card-section"><h3>${title}</h3>`;
+  for (const c of cards) {
+    const meta = metaFn(c);
+    html += `<div class="card-row">
+      <span class="card-count">${c.count}x</span>
+      <span class="card-name" style="margin-left:8px">${c.name}</span>
+      ${meta ? `<span class="card-meta">${meta}</span>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderMatchups(matchups) {
+  const el = document.getElementById('matchupTable');
+  const entries = Object.entries(matchups);
+  if (!entries.length) {
+    el.innerHTML = '<p style="color:var(--muted)">No archetype matchups (no seed decks selected)</p>';
+    return;
+  }
+
+  let html = '<table class="matchup"><tr><th>Archetype</th><th>Win Rate</th></tr>';
+  for (const [name, wr] of entries) {
+    const pct = (wr * 100).toFixed(1);
+    const color = wr > 0.55 ? 'var(--green)' : wr < 0.45 ? 'var(--red)' : 'var(--yellow)';
+    html += `<tr><td>${name}</td><td style="color:${color}">${pct}%</td></tr>`;
+  }
+  html += '</table>';
+  el.innerHTML = html;
+}
+
+function renderFrequency(commonCards) {
+  const el = document.getElementById('freqList');
+  if (!commonCards || !commonCards.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No cards shared across all top decks</span>';
+    return;
+  }
+
+  el.innerHTML = commonCards.map(c => {
+    const cls = c.supertype === 'Pokémon' ? 'pokemon' : c.supertype === 'Trainer' ? 'trainer' : 'energy';
+    return `<span class="freq-tag ${cls}">${c.name}</span>`;
+  }).join('');
+}
+
+function renderChart(history) {
+  const canvas = document.getElementById('fitnessChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 250 * dpr;
+  ctx.scale(dpr, dpr);
+
+  const W = rect.width;
+  const H = 250;
+  const pad = { top: 20, right: 20, bottom: 35, left: 50 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  ctx.clearRect(0, 0, W, H);
+
+  if (!history || !history.length) return;
+
+  const gens = history.map(h => h.gen);
+  const bestVals = history.map(h => h.best_fitness);
+  const avgVals = history.map(h => h.avg_fitness);
+  const allVals = [...bestVals, ...avgVals];
+  const minY = Math.max(0, Math.min(...allVals) - 0.05);
+  const maxY = Math.min(1, Math.max(...allVals) + 0.05);
+  const minX = Math.min(...gens);
+  const maxX = Math.max(...gens);
+
+  const toX = g => pad.left + ((g - minX) / Math.max(1, maxX - minX)) * plotW;
+  const toY = v => pad.top + (1 - (v - minY) / Math.max(0.01, maxY - minY)) * plotH;
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (i / 4) * plotH;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+  }
+
+  // Axes labels
+  ctx.fillStyle = '#999';
+  ctx.font = '11px system-ui';
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= 4; i++) {
+    const val = maxY - (i / 4) * (maxY - minY);
+    ctx.fillText((val * 100).toFixed(0) + '%', pad.left - 25, pad.top + (i / 4) * plotH + 4);
+  }
+  // X axis
+  const step = Math.max(1, Math.floor(gens.length / 6));
+  for (let i = 0; i < gens.length; i += step) {
+    ctx.fillText(gens[i], toX(gens[i]), H - 8);
+  }
+  ctx.fillText('Generation', W / 2, H - 0);
+
+  // Draw lines
+  function drawLine(vals, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < gens.length; i++) {
+      const x = toX(gens[i]);
+      const y = toY(vals[i]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  drawLine(avgVals, 'rgba(240, 201, 41, 0.7)');
+  drawLine(bestVals, '#4ecca3');
+
+  // Legend
+  ctx.font = '12px system-ui';
+  ctx.fillStyle = '#4ecca3';
+  ctx.fillText('Best', W - pad.right - 60, pad.top + 12);
+  ctx.fillStyle = 'rgba(240, 201, 41, 0.9)';
+  ctx.fillText('Avg', W - pad.right - 20, pad.top + 12);
+}
+
+// Redraw chart on resize
+window.addEventListener('resize', () => {
+  if (currentResults && currentResults.fitness_history) {
+    renderChart(currentResults.fitness_history);
+  }
+});
+</script>
+</body>
+</html>

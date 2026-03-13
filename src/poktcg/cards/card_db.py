@@ -156,14 +156,16 @@ class CardDB:
         self.cards: dict[str, CardData] = {}
         self._trainer_rules: dict[str, list[str]] = {}
 
-    def load(self, data_dir: str | Path) -> None:
+    def load(self, data_dir: str | Path, sets: list[str] | None = None) -> None:
         data_dir = Path(data_dir)
-        set_files = {
+        all_set_files = {
             "base1": "base1.json",
             "base2": "base2.json",
             "base3": "base3.json",
             "basep": "basep.json",
         }
+        set_files = {k: v for k, v in all_set_files.items()
+                     if sets is None or k in sets}
         for set_id, filename in set_files.items():
             filepath = data_dir / filename
             with open(filepath) as f:
@@ -215,7 +217,7 @@ class CardDB:
 _db: CardDB | None = None
 
 
-def get_card_db() -> CardDB:
+def get_card_db(sets: list[str] | None = None) -> CardDB:
     global _db
     if _db is None:
         _db = CardDB()
@@ -225,6 +227,12 @@ def get_card_db() -> CardDB:
             Path("data/cards"),
         ]:
             if candidate.exists():
-                _db.load(candidate)
+                _db.load(candidate, sets=sets)
                 break
     return _db
+
+
+def reset_card_db() -> None:
+    """Clear the global CardDB so a fresh one can be loaded with different sets."""
+    global _db
+    _db = None
