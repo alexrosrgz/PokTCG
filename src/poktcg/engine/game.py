@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import Optional, Protocol
 
 from poktcg.cards.card_db import CardDB, CardData, get_card_db
-from poktcg.cards.effects import get_attack_effect, get_trainer_effect, get_power_hooks, is_muk_active, power_usable
+from poktcg.cards.effects import (
+    get_attack_effect, get_trainer_effect, get_power_hooks,
+    get_power_hooks_by_name, is_muk_active, power_usable,
+)
 from poktcg.engine.state import GameState, PlayerState, PokemonSlot, Phase, SpecialCondition
 from poktcg.engine.actions import Action, ActionType, get_legal_actions, _can_pay_energy
 from poktcg.engine.damage import calculate_damage
@@ -18,6 +21,7 @@ import poktcg.cards.pokemon.base2
 import poktcg.cards.pokemon.base3
 import poktcg.cards.pokemon.basep
 import poktcg.cards.trainers
+import poktcg.cards.powers
 
 
 class Player(Protocol):
@@ -277,8 +281,29 @@ class Game:
         elif action.type == ActionType.PLAY_TRAINER:
             self._play_trainer(player_idx, action)
 
+        elif action.type == ActionType.USE_POWER:
+            self._use_power(player_idx, action)
+
         elif action.type == ActionType.RETREAT:
             self._execute_retreat(player_idx, action)
+
+    def _use_power(self, player_idx: int, action: Action):
+        """Execute a Pokemon Power."""
+        p = self.state.players[player_idx]
+        card = self.db.get(action.card_id)
+
+        # Find hooks by card ID or name
+        hooks = get_power_hooks(action.card_id)
+        if not hooks:
+            hooks = get_power_hooks_by_name(card.name, self.db)
+        if not hooks or "activate" not in hooks:
+            return
+
+        activate_fn = hooks["activate"]
+        activate_fn(self, player_idx, action.target_slot)
+
+        # Check KOs after power use (e.g., Electrode Buzzap)
+        self._check_all_kos()
 
     def _execute_retreat(self, player_idx: int, action: Action):
         """Execute a retreat action."""
@@ -288,6 +313,14 @@ class Game:
 
         active_card = self.db.get(p.active.card_id)
         retreat_cost = active_card.retreat_cost
+
+        # Dodrio reduces retreat cost by 1 per benched Dodrio
+        for slot in p.bench:
+            bench_card = self.db.get(slot.card_id)
+            if bench_card.name == "Dodrio":
+                if not (slot.conditions & {SpecialCondition.ASLEEP, SpecialCondition.CONFUSED, SpecialCondition.PARALYZED}):
+                    retreat_cost -= 1
+        retreat_cost = max(0, retreat_cost)
 
         # Check confusion
         if SpecialCondition.CONFUSED in p.active.conditions:
@@ -356,7 +389,17 @@ class Game:
 
         if base_damage > 0:
             final_damage = calculate_damage(attacker, defender, base_damage)
-            defender.damage += final_damage
+
+            # Apply passive powers that modify damage (Mr. Mime, Kabuto, Haunter)
+            final_damage = self._apply_passive_powers(
+                opp_idx, 0, final_damage, player_idx
+            )
+
+            if final_damage > 0:
+                defender.damage += final_damage
+
+                # Reactive powers (Machamp Strikes Back)
+                self._trigger_on_damaged(opp_idx, 0, final_damage, player_idx)
 
         # Check KOs everywhere (attacks can damage self, bench, etc.)
         self._check_all_kos()
@@ -510,6 +553,40 @@ class Game:
         self.state.phase = Phase.FINISHED
         self.state.winner = winner
         self.state.game_over_reason = reason
+
+    def _apply_passive_powers(self, defender_player_idx: int, slot_idx: int,
+                               damage: int, attacker_player_idx: int) -> int:
+        """Apply before_damage passive powers (Mr. Mime, Kabuto, Haunter)."""
+        p = self.state.players[defender_player_idx]
+        slot = self._get_slot(p, slot_idx)
+        if slot is None:
+            return damage
+
+        card = self.db.get(slot.card_id)
+        # Check by card ID
+        hooks = get_power_hooks(slot.card_id)
+        if not hooks:
+            hooks = get_power_hooks_by_name(card.name, self.db)
+        if hooks and "before_damage" in hooks:
+            damage = hooks["before_damage"](self, defender_player_idx, slot_idx,
+                                            damage, attacker_player_idx)
+        return damage
+
+    def _trigger_on_damaged(self, defender_player_idx: int, slot_idx: int,
+                             damage: int, attacker_player_idx: int):
+        """Trigger on_damaged reactive powers (Machamp Strikes Back)."""
+        p = self.state.players[defender_player_idx]
+        slot = self._get_slot(p, slot_idx)
+        if slot is None:
+            return
+
+        card = self.db.get(slot.card_id)
+        hooks = get_power_hooks(slot.card_id)
+        if not hooks:
+            hooks = get_power_hooks_by_name(card.name, self.db)
+        if hooks and "on_damaged" in hooks:
+            hooks["on_damaged"](self, defender_player_idx, slot_idx,
+                                damage, attacker_player_idx)
 
     def _get_slot(self, player: PlayerState, slot_idx: int) -> Optional[PokemonSlot]:
         """Get slot by index: 0 = active, 1+ = bench."""

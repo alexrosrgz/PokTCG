@@ -73,6 +73,15 @@ def register_power(card_id: str, hook_type: str = "activate"):
     return decorator
 
 
+def get_power_hooks_by_name(card_name: str, db) -> dict[str, Callable] | None:
+    """Find power hooks by card name (for duplicate prints)."""
+    for card_id, hooks in _power_effects.items():
+        card = db.get(card_id)
+        if card.name == card_name:
+            return hooks
+    return None
+
+
 def get_attack_effect(card_id: str, attack_index: int) -> Optional[Callable]:
     key = f"{card_id}:{attack_index}"
     return _attack_effects.get(key)

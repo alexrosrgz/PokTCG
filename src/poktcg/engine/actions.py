@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Optional
 
 from poktcg.cards.card_db import CardDB, get_card_db
+from poktcg.cards.effects import get_power_hooks, get_power_hooks_by_name, power_usable, is_muk_active
 from poktcg.engine.state import GameState, PlayerState, PokemonSlot, SpecialCondition
 
 
@@ -85,6 +86,52 @@ def _can_pay_retreat(slot: PokemonSlot, db: CardDB) -> bool:
     return len(slot.attached_energy) >= card.retreat_cost
 
 
+def power_usable_for_action(slot: PokemonSlot, state: GameState) -> bool:
+    """Check if a Pokemon's power can be used as an action (not blocked, not already used if once-per-turn)."""
+    if slot.conditions & {SpecialCondition.ASLEEP, SpecialCondition.CONFUSED, SpecialCondition.PARALYZED}:
+        return False
+    # Muk check is done via power_usable in the effect itself
+    return True
+
+
+def _is_aerodactyl_active(state: GameState, db: CardDB) -> bool:
+    """Check if any Aerodactyl in play has Prehistoric Power active."""
+    for p in state.players:
+        for slot in p.all_pokemon_slots():
+            card = db.get(slot.card_id)
+            if card.name == "Aerodactyl":
+                if not (slot.conditions & {SpecialCondition.ASLEEP, SpecialCondition.CONFUSED, SpecialCondition.PARALYZED}):
+                    if not is_muk_active_state(state, db):
+                        return True
+    return False
+
+
+def is_muk_active_state(state: GameState, db: CardDB) -> bool:
+    """Check if Muk's Toxic Gas is active (state-only version, no Game needed)."""
+    for p in state.players:
+        for slot in p.all_pokemon_slots():
+            card = db.get(slot.card_id)
+            if card.name == "Muk":
+                if not (slot.conditions & {SpecialCondition.ASLEEP, SpecialCondition.CONFUSED, SpecialCondition.PARALYZED}):
+                    return True
+    return False
+
+
+def _get_retreat_cost_with_dodrio(player: PlayerState, db: CardDB) -> int:
+    """Get retreat cost factoring in Dodrio's Retreat Aid."""
+    if not player.active:
+        return 0
+    card = db.get(player.active.card_id)
+    cost = card.retreat_cost
+    # Dodrio reduces retreat cost by 1 for each Dodrio on bench
+    for slot in player.bench:
+        bench_card = db.get(slot.card_id)
+        if bench_card.name == "Dodrio":
+            if not (slot.conditions & {SpecialCondition.ASLEEP, SpecialCondition.CONFUSED, SpecialCondition.PARALYZED}):
+                cost -= 1
+    return max(0, cost)
+
+
 def get_legal_actions(state: GameState) -> list[Action]:
     """Generate all legal actions for the current player."""
     db = get_card_db()
@@ -153,6 +200,27 @@ def get_legal_actions(state: GameState) -> list[Action]:
                 card_id=card_id,
             ))
 
+    # Use Pokemon Powers
+    for slot_idx, slot in enumerate([player.active] + player.bench):
+        if slot is None:
+            continue
+        card = db.get(slot.card_id)
+        hooks = get_power_hooks(slot.card_id)
+        if not hooks:
+            hooks = get_power_hooks_by_name(card.name, db)
+        if hooks and "activate" in hooks:
+            if power_usable_for_action(slot, state):
+                actions.append(Action(
+                    type=ActionType.USE_POWER,
+                    card_id=slot.card_id,
+                    target_slot=slot_idx,
+                ))
+
+    # Check for Aerodactyl: block evolution
+    aerodactyl_active = _is_aerodactyl_active(state, db)
+    if aerodactyl_active:
+        actions = [a for a in actions if a.type != ActionType.EVOLVE]
+
     # Attack (ends turn)
     if player.active:
         active_card = db.get(player.active.card_id)
@@ -166,10 +234,11 @@ def get_legal_actions(state: GameState) -> list[Action]:
                         attack_index=i,
                     ))
 
-    # Retreat (costs energy, need bench to swap with)
+    # Retreat (costs energy, need bench to swap with, Dodrio reduces cost)
     if player.active and player.bench:
         if SpecialCondition.PARALYZED not in player.active.conditions:
-            if _can_pay_retreat(player.active, db):
+            adjusted_cost = _get_retreat_cost_with_dodrio(player, db)
+            if len(player.active.attached_energy) >= adjusted_cost:
                 for bench_idx in range(len(player.bench)):
                     actions.append(Action(
                         type=ActionType.RETREAT,
