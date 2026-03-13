@@ -56,13 +56,14 @@
   .deck-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .deck-header .fitness { font-size: 1.3em; font-weight: 700; color: var(--green); }
   .deck-header .counts { font-size: 0.85em; color: var(--muted); }
-  .card-section { margin-bottom: 10px; }
-  .card-section h3 { font-size: 0.85em; color: var(--accent); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
-  .card-row { display: flex; justify-content: space-between; padding: 3px 8px; font-size: 0.9em; border-radius: 4px; }
-  .card-row:nth-child(odd) { background: rgba(255,255,255,0.03); }
-  .card-row .card-name { flex: 1; }
-  .card-row .card-meta { color: var(--muted); font-size: 0.85em; }
-  .card-row .card-count { font-weight: 700; min-width: 28px; text-align: right; }
+  .card-section { margin-bottom: 16px; }
+  .card-section h3 { font-size: 0.85em; color: var(--accent); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .card-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+  .card-thumb { position: relative; width: 100px; text-align: center; }
+  .card-thumb img { width: 100px; border-radius: 6px; display: block; background: var(--card); min-height: 140px; }
+  .card-thumb .count-badge { position: absolute; top: 4px; left: 4px; background: var(--accent); color: #fff; font-size: 0.75em; font-weight: 700; padding: 2px 6px; border-radius: 8px; line-height: 1; }
+  .card-thumb .thumb-name { font-size: 0.75em; margin-top: 4px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-thumb .thumb-meta { font-size: 0.65em; color: var(--muted); line-height: 1.2; }
 
   /* Tabs for top decks */
   .deck-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
@@ -312,6 +313,11 @@ function showResults(data) {
   renderChart(data.fitness_history);
 }
 
+function cardImgUrl(card) {
+  const [set, num] = card.id.split('-');
+  return `https://images.pokemontcg.io/${set}/${num}.png`;
+}
+
 function renderDeck(deck, index) {
   const el = document.getElementById('deckDisplay');
   const pokemon = deck.cards.filter(c => c.supertype === 'Pokémon').sort((a, b) => a.name.localeCompare(b.name));
@@ -327,7 +333,6 @@ function renderDeck(deck, index) {
     const meta = [];
     if (c.hp) meta.push(c.hp + 'HP');
     if (c.types && c.types.length) meta.push(c.types.join('/'));
-    if (c.subtypes && c.subtypes.length) meta.push(c.subtypes.join(' '));
     return meta.join(' · ');
   });
 
@@ -339,16 +344,18 @@ function renderDeck(deck, index) {
 
 function renderCardSection(title, cards, metaFn) {
   if (!cards.length) return '';
-  let html = `<div class="card-section"><h3>${title}</h3>`;
+  let html = `<div class="card-section"><h3>${title}</h3><div class="card-grid">`;
   for (const c of cards) {
     const meta = metaFn(c);
-    html += `<div class="card-row">
-      <span class="card-count">${c.count}x</span>
-      <span class="card-name" style="margin-left:8px">${c.name}</span>
-      ${meta ? `<span class="card-meta">${meta}</span>` : ''}
+    const imgUrl = cardImgUrl(c);
+    html += `<div class="card-thumb">
+      <img src="${imgUrl}" alt="${c.name}" loading="lazy" onerror="this.style.background='var(--card)';this.style.minHeight='140px';this.removeAttribute('src')">
+      <span class="count-badge">${c.count}x</span>
+      <div class="thumb-name" title="${c.name}">${c.name}</div>
+      ${meta ? `<div class="thumb-meta">${meta}</div>` : ''}
     </div>`;
   }
-  html += '</div>';
+  html += '</div></div>';
   return html;
 }
 
