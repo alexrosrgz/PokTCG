@@ -43,7 +43,8 @@ Open **http://localhost:8000** in your browser. From there you can:
 5. **Click Run** and watch real-time progress: generation counter, progress bar, best/avg fitness
 
 Results include:
-- **Deck list** — cards grouped by Pokemon / Trainer / Energy with HP, types, counts
+- **Deck list** — card image thumbnails in a grid with count badges, grouped by Pokemon / Trainer / Energy
+- **Simulation insights** — total games played, games/sec, total time, avg turns/game, and win condition breakdown (prizes taken, no Pokemon left, deck out)
 - **Matchup table** — win rates vs seed archetypes (color-coded green/yellow/red)
 - **Fitness chart** — best and average fitness over generations
 - **Card frequency** — which cards appear across all top-3 decks
