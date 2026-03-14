@@ -90,6 +90,17 @@
   .freq-tag.energy { border-left: 3px solid var(--green); }
 
   .full-width { grid-column: 1 / -1; }
+
+  /* Insights panel */
+  .insights-panel { background: var(--surface); padding: 18px; border-radius: 10px; }
+  .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .insight-stat { background: var(--card); padding: 12px; border-radius: 8px; text-align: center; }
+  .insight-stat .stat-value { font-size: 1.4em; font-weight: 700; color: var(--green); }
+  .insight-stat .stat-label { font-size: 0.75em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+  .win-conditions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .win-cond { background: var(--card); padding: 8px 14px; border-radius: 8px; font-size: 0.85em; display: flex; align-items: center; gap: 8px; }
+  .win-cond .cond-bar { height: 6px; border-radius: 3px; min-width: 30px; }
+  .win-cond .cond-pct { font-weight: 700; min-width: 40px; text-align: right; }
 </style>
 </head>
 <body>
@@ -164,6 +175,12 @@
         <h2>Top Decks</h2>
         <div class="deck-tabs" id="deckTabs"></div>
         <div id="deckDisplay"></div>
+      </div>
+
+      <div class="insights-panel full-width">
+        <h2>Simulation Insights</h2>
+        <div class="insights-grid" id="insightsGrid"></div>
+        <div class="win-conditions" id="winConditions"></div>
       </div>
 
       <div class="matchup-panel">
@@ -308,6 +325,7 @@ function showResults(data) {
   });
 
   if (data.decks.length > 0) renderDeck(data.decks[0], 0);
+  renderInsights(data.insights, data.fitness_history);
   renderMatchups(data.matchups);
   renderFrequency(data.common_cards);
   renderChart(data.fitness_history);
@@ -357,6 +375,60 @@ function renderCardSection(title, cards, metaFn) {
   }
   html += '</div></div>';
   return html;
+}
+
+function renderInsights(insights, fitnessHistory) {
+  const grid = document.getElementById('insightsGrid');
+  const condEl = document.getElementById('winConditions');
+  if (!insights) { grid.innerHTML = ''; condEl.innerHTML = ''; return; }
+
+  // Format time
+  const mins = Math.floor(insights.total_time_sec / 60);
+  const secs = Math.round(insights.total_time_sec % 60);
+  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+  // Stat cards
+  const stats = [
+    { value: insights.total_games.toLocaleString(), label: 'Games Played' },
+    { value: insights.games_per_sec.toLocaleString(), label: 'Games / Second' },
+    { value: timeStr, label: 'Total Time' },
+    { value: insights.avg_turns_per_game, label: 'Avg Turns / Game' },
+  ];
+
+  grid.innerHTML = stats.map(s =>
+    `<div class="insight-stat"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`
+  ).join('');
+
+  // Win conditions breakdown
+  const conds = insights.win_conditions;
+  const total = Object.values(conds).reduce((a, b) => a + b, 0);
+  if (!total) { condEl.innerHTML = ''; return; }
+
+  const condColors = {
+    'all prizes taken': 'var(--green)',
+    'no Pokémon remaining': 'var(--accent)',
+    'deck out': 'var(--yellow)',
+    'max turns reached': 'var(--muted)',
+  };
+  const condLabels = {
+    'all prizes taken': 'Prizes Taken',
+    'no Pokémon remaining': 'No Pokemon Left',
+    'deck out': 'Deck Out',
+    'max turns reached': 'Max Turns',
+  };
+
+  const sorted = Object.entries(conds).sort((a, b) => b[1] - a[1]);
+  condEl.innerHTML = sorted.map(([reason, count]) => {
+    const pct = (count / total * 100).toFixed(1);
+    const color = condColors[reason] || 'var(--muted)';
+    const label = condLabels[reason] || reason;
+    const barWidth = Math.max(30, count / total * 120);
+    return `<div class="win-cond">
+      <span class="cond-pct">${pct}%</span>
+      <span class="cond-bar" style="background:${color};width:${barWidth}px"></span>
+      <span>${label}</span>
+    </div>`;
+  }).join('');
 }
 
 function renderMatchups(matchups) {

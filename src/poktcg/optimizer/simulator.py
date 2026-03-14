@@ -15,6 +15,7 @@ class MatchResult:
     losses: int
     draws: int
     total_turns: int
+    reason_counts: dict[str, int] | None = None
 
     @property
     def total(self) -> int:
@@ -29,8 +30,8 @@ class MatchResult:
         return self.total_turns / max(1, self.total)
 
 
-def _play_single_game(args: tuple) -> tuple[int, int]:
-    """Play a single game. Returns (winner, turns).
+def _play_single_game(args: tuple) -> tuple[int, int, str]:
+    """Play a single game. Returns (winner, turns, reason).
     Must be top-level function for multiprocessing pickling.
     """
     deck0_list, deck1_list, seed = args
@@ -43,12 +44,15 @@ def _play_single_game(args: tuple) -> tuple[int, int]:
     p1 = HeuristicAI(seed=seed + 10000)
     game = Game(p0, p1, deck0_list, deck1_list, seed=seed)
     result = game.play()
-    return result.winner, result.turns
+    return result.winner, result.turns, result.reason
 
 
 class Simulator:
     def __init__(self, num_workers: int | None = None):
         self.num_workers = num_workers or min(mp.cpu_count(), 8)
+        self.total_games_played = 0
+        self.total_turns_played = 0
+        self.reason_counts: dict[str, int] = {}
 
     def evaluate_matchup(self, deck_a: Deck, deck_b: Deck,
                           num_games: int = 50, base_seed: int = 0) -> MatchResult:
@@ -76,8 +80,10 @@ class Simulator:
         wins = 0
         losses = 0
         total_turns = 0
-        for i, (winner, turns) in enumerate(results):
+        reason_counts: dict[str, int] = {}
+        for i, (winner, turns, reason) in enumerate(results):
             total_turns += turns
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
             if i % 2 == 0:
                 if winner == 0:
                     wins += 1
@@ -89,11 +95,18 @@ class Simulator:
                 else:
                     losses += 1
 
+        # Accumulate global stats
+        self.total_games_played += len(results)
+        self.total_turns_played += total_turns
+        for reason, count in reason_counts.items():
+            self.reason_counts[reason] = self.reason_counts.get(reason, 0) + count
+
         return MatchResult(
             wins=wins,
             losses=losses,
             draws=0,
             total_turns=total_turns,
+            reason_counts=reason_counts,
         )
 
     def evaluate_vs_field(self, deck: Deck, field: list[Deck],
@@ -110,21 +123,30 @@ class Simulator:
         return total_wins / max(1, total_games)
 
     def batch_games(self, game_args: list[tuple[list[str], list[str], int]]
-                     ) -> list[tuple[int, int]]:
+                     ) -> list[tuple[int, int, str]]:
         """Play many games in one ProcessPoolExecutor.map call.
 
         Args:
             game_args: list of (deck0_list, deck1_list, seed) tuples
 
         Returns:
-            list of (winner, turns) tuples in the same order
+            list of (winner, turns, reason) tuples in the same order
         """
         if not game_args:
             return []
         if self.num_workers <= 1:
-            return [_play_single_game(a) for a in game_args]
-        with ProcessPoolExecutor(max_workers=self.num_workers) as pool:
-            return list(pool.map(_play_single_game, game_args))
+            results = [_play_single_game(a) for a in game_args]
+        else:
+            with ProcessPoolExecutor(max_workers=self.num_workers) as pool:
+                results = list(pool.map(_play_single_game, game_args))
+
+        # Accumulate global stats
+        self.total_games_played += len(results)
+        for _winner, turns, reason in results:
+            self.total_turns_played += turns
+            self.reason_counts[reason] = self.reason_counts.get(reason, 0) + 1
+
+        return results
 
     def round_robin(self, decks: list[Deck], games_per_pair: int = 20,
                      base_seed: int = 0) -> list[tuple[int, float]]:

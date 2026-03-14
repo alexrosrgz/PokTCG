@@ -240,7 +240,7 @@ class CoevolutionOptimizer(GeneticOptimizer):
         results = self.sim.batch_games(game_args)
 
         # Tally results
-        for (i, j, g), (winner, _turns) in zip(matchup_info, results):
+        for (i, j, g), (winner, _turns, _reason) in zip(matchup_info, results):
             if g % 2 == 0:
                 if winner == 0:
                     wins[i] += 1
@@ -287,7 +287,7 @@ class CoevolutionOptimizer(GeneticOptimizer):
         # Tally
         wins = [0] * n
         total = [0] * n
-        for (i, g), (winner, _turns) in zip(matchup_info, results):
+        for (i, g), (winner, _turns, _reason) in zip(matchup_info, results):
             if g % 2 == 0:
                 if winner == 0:
                     wins[i] += 1
@@ -364,7 +364,7 @@ class CoevolutionOptimizer(GeneticOptimizer):
         # Tally
         wins = [0] * n
         total = [0] * n
-        for (i, j, g), (winner, _turns) in zip(matchup_info, results):
+        for (i, j, g), (winner, _turns, _reason) in zip(matchup_info, results):
             if g % 2 == 0:
                 if winner == 0:
                     wins[i] += 1

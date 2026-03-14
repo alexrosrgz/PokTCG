@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 
 from poktcg.cards.card_db import get_card_db, reset_card_db
@@ -131,6 +132,8 @@ def run_optimization(
                 "hof_size": data.get("hof_size", 0),
             })
 
+    optimization_start = time.time()
+
     if mode == "counter" and counter_targets:
         # Use GeneticOptimizer against specific targets
         target_decks = []
@@ -189,6 +192,8 @@ def run_optimization(
             on_progress=on_progress,
         )
 
+    optimization_elapsed = time.time() - optimization_start
+
     progress_callback("status", {"message": "Running matchup evaluation..."})
 
     # Serialize top 3 decks
@@ -231,9 +236,35 @@ def run_optimization(
                 "frequency": freq,
             })
 
+    # Gather simulation stats from the optimizer's simulator
+    sim_stats = optimizer.sim
+    total_games = sim_stats.total_games_played
+    total_turns = sim_stats.total_turns_played
+    reason_counts = dict(sim_stats.reason_counts)
+
+    # Add games from matchup evaluation
+    if seed_decks:
+        total_games += sim.total_games_played
+        total_turns += sim.total_turns_played
+        for reason, count in sim.reason_counts.items():
+            reason_counts[reason] = reason_counts.get(reason, 0) + count
+
+    avg_turns = total_turns / max(1, total_games)
+    games_per_sec = total_games / max(0.01, optimization_elapsed)
+
+    # Build insights
+    insights = {
+        "total_games": total_games,
+        "total_time_sec": round(optimization_elapsed, 1),
+        "games_per_sec": round(games_per_sec, 1),
+        "avg_turns_per_game": round(avg_turns, 1),
+        "win_conditions": reason_counts,
+    }
+
     return {
         "decks": top_results,
         "matchups": matchups,
         "fitness_history": fitness_history,
         "common_cards": common_cards,
+        "insights": insights,
     }
