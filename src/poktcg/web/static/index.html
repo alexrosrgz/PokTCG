@@ -13,9 +13,9 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
   .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
-  h1 { text-align: center; margin: 20px 0 10px; font-size: 1.8em; }
+  h1 { margin: 0; font-size: 2.2em; text-shadow: 0 0 15px rgba(233,69,96,0.3); }
   h1 span { color: var(--accent); }
-  .subtitle { text-align: center; color: var(--muted); margin-bottom: 30px; font-size: 0.95em; }
+  .subtitle { text-align: left; color: var(--muted); margin-bottom: 30px; font-size: 0.95em; margin-top: -10px; }
   h2 { margin: 20px 0 12px; font-size: 1.2em; border-bottom: 2px solid var(--accent); padding-bottom: 4px; display: inline-block; }
 
   /* Config Form */
@@ -23,15 +23,19 @@
   .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .form-group { margin-bottom: 14px; }
   .form-group label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.9em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .checkbox-group { display: flex; gap: 16px; flex-wrap: wrap; }
-  .checkbox-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: normal; text-transform: none; color: var(--text); font-size: 1em; letter-spacing: 0; }
-  .radio-group { display: flex; gap: 16px; flex-wrap: wrap; }
-  .radio-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: normal; text-transform: none; color: var(--text); font-size: 1em; letter-spacing: 0; }
-  select { background: var(--card); color: var(--text); border: 1px solid #333; padding: 8px 12px; border-radius: 6px; font-size: 1em; width: 100%; }
-  .counter-targets { margin-top: 8px; display: none; }
+  .chip-group { display: flex; gap: 10px; flex-wrap: wrap; }
+  .chip { cursor: pointer; }
+  .chip input { display: none; }
+  .chip span { display: inline-block; padding: 8px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: var(--muted); transition: all 0.2s; font-size: 0.9em; font-weight: 600; }
+  .chip:hover span { border-color: rgba(255,255,255,0.3); color: #fff; background: rgba(255,255,255,0.05); }
+  .chip input:checked + span { background: rgba(233, 69, 96, 0.15); border-color: var(--accent); color: #fff; box-shadow: 0 0 12px rgba(233,69,96,0.3); }
+  
+  select { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); padding: 10px 14px; border-radius: 8px; font-size: 0.95em; width: 100%; cursor:pointer; outline: none; transition: border-color 0.2s; }
+  select:focus, select:hover { border-color: var(--accent); }
+  .counter-targets { margin-top: 12px; display: none; }
   .counter-targets.visible { display: block; }
-  button.run { background: var(--accent); color: #fff; border: none; padding: 12px 32px; border-radius: 8px; font-size: 1.1em; cursor: pointer; font-weight: 600; transition: opacity 0.2s; display: block; margin: 20px auto 0; }
-  button.run:hover { opacity: 0.85; }
+  button.run { background: linear-gradient(135deg, var(--accent) 0%, #b82d45 100%); color: #fff; border: none; padding: 14px 44px; border-radius: 8px; font-size: 1.1em; cursor: pointer; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; transition: all 0.3s; box-shadow: 0 6px 20px rgba(233, 69, 96, 0.4); text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+  button.run:hover { transform: translateY(-2px); box-shadow: 0 8px 26px rgba(233, 69, 96, 0.6); }
   button.run:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* Progress */
@@ -120,7 +124,7 @@
   .delete-btn:hover { color: var(--red); opacity: 1; background: rgba(233,69,96,0.1); }
 
   /* Deck Builder */
-  .top-nav { text-align: center; margin-bottom: 20px; display: flex; justify-content: center; gap: 12px; }
+  .top-nav { display: flex; gap: 12px; }
   .nav-btn { background: var(--surface); color: var(--muted); border: none; padding: 8px 24px; font-size: 1em; cursor: pointer; border-radius: 8px; font-weight: bold; transition: all 0.2s;}
   .nav-btn.active { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(233, 69, 96, 0.4); }
   .nav-btn:hover:not(.active) { background: #2a3a5a; color: #fff; }
@@ -144,73 +148,85 @@
 </head>
 <body>
 <div class="container">
-  <h1 style="margin-bottom: 10px;">Pok<span>TCG</span></h1>
-  <div class="top-nav">
-    <button class="nav-btn active" id="navOpt" onclick="switchMode('optimizer')">Optimizer</button>
-    <button class="nav-btn" id="navBuild" onclick="switchMode('builder')">Deck Builder</button>
-  </div>
+  <header style="display:flex; justify-content:space-between; align-items:center; padding-bottom: 20px; border-bottom: 2px solid rgba(255, 255, 255, 0.15); margin-bottom: 24px; flex-wrap:wrap; gap:16px;">
+    <h1>Pok<span>TCG</span></h1>
+    <div class="top-nav">
+      <button class="nav-btn active" id="navOpt" onclick="switchMode('optimizer')">Optimizer</button>
+      <button class="nav-btn" id="navBuild" onclick="switchMode('builder')">Deck Builder</button>
+      <button class="nav-btn" id="navSaved" onclick="switchMode('saved')">Saved Decks</button>
+    </div>
+  </header>
   <div id="optimizerView">
-  <p class="subtitle">Genetic algorithm deck builder for the Base-Fossil format</p>
 
   <!-- Config -->
   <div class="config">
-    <div class="config-grid">
-      <div>
-        <div class="form-group">
+    <h2 style="margin:0; font-size:1.4em; margin-bottom: 24px;">Genetic Optimization Engine</h2>
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+      
+      <!-- Row 1 -->
+      <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        
+        <div class="form-group" style="flex: 1; min-width: 300px; margin: 0;">
           <label>Starting Archetypes</label>
-          <div class="checkbox-group">
-            <label><input type="checkbox" value="haymaker" checked> Haymaker</label>
-            <label><input type="checkbox" value="raindance" checked> Raindance</label>
-            <label><input type="checkbox" value="damage_swap" checked> Damage Swap</label>
+          <div style="display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap;">
+            <div class="chip-group">
+              <label class="chip"><input type="checkbox" value="haymaker" checked> <span>Haymaker</span></label>
+              <label class="chip"><input type="checkbox" value="raindance" checked> <span>Raindance</span></label>
+              <label class="chip"><input type="checkbox" value="damage_swap" checked> <span>Damage Swap</span></label>
+            </div>
+            <select id="customArchetypeSelect" style="flex: 1; min-width: 160px; max-width: 200px; padding: 6px 10px;">
+              <option value="">-- Add Saved Deck --</option>
+            </select>
           </div>
         </div>
-        <div class="form-group">
-          <label>Optimize For</label>
-          <div class="radio-group">
-            <label><input type="radio" name="mode" value="coevolution" checked> Best overall deck</label>
-            <label><input type="radio" name="mode" value="counter"> Best counter to...</label>
+        
+        <div style="flex: 1; display:flex; gap: 20px; min-width: 300px;">
+          <div class="form-group" style="flex:1; margin: 0;">
+            <label>Search Depth</label>
+            <select id="depth">
+              <option value="quick">Quick (~1 min)</option>
+              <option value="normal" selected>Normal (~3 min)</option>
+              <option value="deep">Deep (~8 min)</option>
+            </select>
           </div>
-          <div class="counter-targets" id="counterTargets">
-            <div class="checkbox-group" style="margin-top:8px">
-              <label><input type="checkbox" class="counter-cb" value="haymaker" checked> Haymaker</label>
-              <label><input type="checkbox" class="counter-cb" value="raindance"> Raindance</label>
-              <label><input type="checkbox" class="counter-cb" value="damage_swap"> Damage Swap</label>
+          <div class="form-group" style="flex:1; margin: 0;">
+            <label>Card Pool</label>
+            <select id="cardPool">
+              <option value="base">Base Set only</option>
+              <option value="base_jungle">Base + Jungle</option>
+              <option value="base_jungle_fossil">Base + Jungle + Fossil</option>
+              <option value="all" selected>All (+ Promos)</option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Row 2 -->
+      <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <div class="form-group" style="flex: 1; min-width: 300px; margin: 0;">
+          <label>Optimize For</label>
+          <div class="chip-group" style="margin-bottom: 12px;">
+            <label class="chip"><input type="radio" name="mode" value="coevolution" checked> <span>Best overall deck</span></label>
+            <label class="chip"><input type="radio" name="mode" value="counter"> <span>Best counter to...</span></label>
+          </div>
+          <!-- Counter Targets conditionally drop down here -->
+          <div class="counter-targets" id="counterTargets" style="margin-top: 0;">
+            <div class="chip-group">
+              <label class="chip"><input type="checkbox" class="counter-cb" value="haymaker" checked> <span>Haymaker</span></label>
+              <label class="chip"><input type="checkbox" class="counter-cb" value="raindance"> <span>Raindance</span></label>
+              <label class="chip"><input type="checkbox" class="counter-cb" value="damage_swap"> <span>Damage Swap</span></label>
             </div>
           </div>
         </div>
       </div>
-      <div>
-        <div class="form-group">
-          <label>Search Depth</label>
-          <select id="depth">
-            <option value="quick">Quick (~1 min)</option>
-            <option value="normal" selected>Normal (~3 min)</option>
-            <option value="deep">Deep (~8 min)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Card Pool</label>
-          <select id="cardPool">
-            <option value="base">Base Set only</option>
-            <option value="base_jungle">Base + Jungle</option>
-            <option value="base_jungle_fossil">Base + Jungle + Fossil</option>
-            <option value="all" selected>All (+ Promos)</option>
-          </select>
-        </div>
+      
+      <!-- Action Footer -->
+      <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 24px; margin-top: 8px; display: flex; justify-content: flex-end;">
+        <button class="run" id="runBtn" onclick="startOptimization()" style="margin: 0; min-width: 250px;">Run Optimizer</button>
       </div>
-    </div>
-    <button class="run" id="runBtn" onclick="startOptimization()">Run Optimizer</button>
-  </div>
 
-  <!-- Saved Decks -->
-  <div class="saved-decks" id="savedDecksPanel">
-    <h2>Saved Decks</h2>
-    <div style="margin-top: 12px; margin-bottom: 12px;">
-      <select id="savedDeckSelect" onchange="onSavedDeckSelectChanged()" style="max-width: 300px; padding: 8px 12px; border-radius: 6px; background: var(--card); color: var(--text); border: 1px solid #333; cursor: pointer;">
-        <option value="">-- Select a Saved Deck --</option>
-      </select>
     </div>
-    <div class="deck-panel" id="savedDeckDisplay" style="display: none;"></div>
   </div>
 
   <!-- Progress -->
@@ -255,6 +271,12 @@
     </div>
   </div>
   </div> <!-- end optimizerView-->
+
+  <!-- Saved Decks View -->
+  <div id="savedDecksPanel" style="display:none; padding:0;">
+    <div class="deck-tabs" id="savedDeckTabs" style="margin-bottom: 20px; display:flex; flex-wrap:wrap;"></div>
+    <div class="deck-panel" id="savedDeckDisplay" style="display:none; padding:0; background:none;"></div>
+  </div>
 
   <!-- Builder View -->
   <div id="builderView" style="display:none;">
@@ -333,8 +355,12 @@ async function startOptimization() {
   document.getElementById('progressBar').style.width = '0%';
   document.getElementById('progressText').textContent = '0%';
 
-  const archetypes = [...document.querySelectorAll('.checkbox-group input[type="checkbox"]:not(.counter-cb):checked')]
+  const archetypes = [...document.querySelectorAll('.chip-group input[type="checkbox"]:not(.counter-cb):checked')]
     .map(cb => cb.value);
+  const customArch = document.getElementById('customArchetypeSelect')?.value;
+  if (customArch) {
+    archetypes.push(customArch);
+  }
   const mode = document.querySelector('input[name="mode"]:checked').value;
   const counterTargets = mode === 'counter'
     ? [...document.querySelectorAll('.counter-cb:checked')].map(cb => cb.value)
@@ -762,42 +788,51 @@ async function loadSavedDecks() {
     loadedSavedDecksData = await res.json();
     const keys = Object.keys(loadedSavedDecksData);
     const panel = document.getElementById('savedDecksPanel');
-    const select = document.getElementById('savedDeckSelect');
     const disp = document.getElementById('savedDeckDisplay');
     
+    const customSelect = document.getElementById('customArchetypeSelect');
+    if (customSelect) {
+      customSelect.innerHTML = '<option value="">-- Add Saved Deck --</option>';
+      if (keys.length) {
+        keys.forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          customSelect.appendChild(opt);
+        });
+      }
+    }
+
     if (!keys.length) {
       panel.classList.remove('visible');
       return;
     }
     
     panel.classList.add('visible');
-    select.innerHTML = '<option value="">-- Select a Saved Deck --</option>';
+    const tabs = document.getElementById('savedDeckTabs');
+    tabs.innerHTML = '';
     
-    keys.forEach((name) => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      select.appendChild(opt);
+    keys.forEach((name, i) => {
+      const btn = document.createElement('button');
+      btn.textContent = name;
+      btn.className = i === 0 ? 'active' : '';
+      btn.onclick = () => {
+        tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        disp.style.display = 'block';
+        renderDeck(loadedSavedDecksData[name], 1000 + i, 'savedDeckDisplay', name);
+      };
+      tabs.appendChild(btn);
     });
     
-    disp.style.display = 'none';
-    disp.innerHTML = '';
+    if (keys.length > 0) {
+      disp.style.display = 'block';
+      renderDeck(loadedSavedDecksData[keys[0]], 1000, 'savedDeckDisplay', keys[0]);
+    } else {
+      disp.style.display = 'none';
+      disp.innerHTML = '';
+    }
   } catch (e) { console.error('Failed to load decks', e); }
-}
-
-function onSavedDeckSelectChanged() {
-  const select = document.getElementById('savedDeckSelect');
-  const disp = document.getElementById('savedDeckDisplay');
-  const name = select.value;
-  
-  if (!name || !loadedSavedDecksData[name]) {
-    disp.style.display = 'none';
-    return;
-  }
-  
-  disp.style.display = 'block';
-  // Render cleanly in the target specific container
-  renderDeck(loadedSavedDecksData[name], 1000 + name.length, 'savedDeckDisplay', name);
 }
 
 async function submitSaveDeck(index) {
@@ -812,7 +847,16 @@ async function submitSaveDeck(index) {
     const btn = document.querySelector(`#saveForm-${index} button`);
     btn.textContent = 'Saved!';
     btn.style.background = 'var(--green)';
-    setTimeout(() => { loadSavedDecks(); }, 500);
+    
+    setTimeout(() => { 
+      loadSavedDecks();
+      switchMode('saved');
+      setTimeout(() => {
+        const tabs = document.getElementById('savedDeckTabs').querySelectorAll('button');
+        const targetTab = Array.from(tabs).find(b => b.textContent === name);
+        if (targetTab) targetTab.click();
+      }, 100);
+    }, 400);
   } catch (e) { alert('Failed to save deck'); }
 }
 
@@ -863,8 +907,12 @@ let totalCardsInDeck = 0;
 function switchMode(mode) {
   document.getElementById('navOpt').classList.toggle('active', mode === 'optimizer');
   document.getElementById('navBuild').classList.toggle('active', mode === 'builder');
+  document.getElementById('navSaved').classList.toggle('active', mode === 'saved');
+  
   document.getElementById('optimizerView').style.display = mode === 'optimizer' ? 'block' : 'none';
   document.getElementById('builderView').style.display = mode === 'builder' ? 'block' : 'none';
+  document.getElementById('savedDecksPanel').style.display = mode === 'saved' ? 'block' : 'none';
+  
   if (mode === 'builder' && allCards.length === 0) fetchLibrary();
 }
 
@@ -1021,7 +1069,13 @@ async function saveCustomDeck() {
     alert('Deck perfectly saved to your library!');
     document.getElementById('builderDeckName').value = '';
     loadSavedDecks();
-    switchMode('optimizer'); // hop back to view it dynamically
+    switchMode('saved');
+    
+    setTimeout(() => {
+      const tabs = document.getElementById('savedDeckTabs').querySelectorAll('button');
+      const targetTab = Array.from(tabs).find(b => b.textContent === name);
+      if (targetTab) targetTab.click();
+    }, 100);
   } catch (e) { alert('Failed to successfully save manual deck'); }
 }
 

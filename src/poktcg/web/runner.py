@@ -90,6 +90,16 @@ def run_optimization(
     db = get_card_db(sets=sets)
 
     progress_callback("status", {"message": f"Loaded {len(db)} cards from {', '.join(sets)}"})
+    
+    import json
+    from pathlib import Path
+    custom_decks = {}
+    try:
+        saved_decks_file = Path(__file__).parent.parent.parent.parent / "data" / "decks" / "saved_decks.json"
+        if saved_decks_file.exists():
+            custom_decks = json.loads(saved_decks_file.read_text())
+    except Exception:
+        pass
 
     # Build seed decks
     seed_decks = []
@@ -104,6 +114,21 @@ def run_optimization(
                     seed_names.append(ARCHETYPE_NAMES[key])
             except (IndexError, KeyError):
                 # Card not available in selected pool
+                pass
+        elif key in custom_decks:
+            try:
+                raw_deck = custom_decks[key]
+                cards_list = raw_deck.get("cards", raw_deck) if isinstance(raw_deck, dict) else raw_deck
+                cards = {c_data["id"]: c_data["count"] for c_data in cards_list}
+                deck = Deck(cards=cards)
+                valid, err = deck.validate()
+                if valid:
+                    seed_decks.append(deck)
+                    seed_names.append(key)
+                else:
+                    progress_callback("status", {"message": f"Ignoring custom deck '{key}' (invalid: {err})"})
+            except Exception as e:
+                progress_callback("status", {"message": f"Ignoring custom deck '{key}' (format error/pool mismatch)"})
                 pass
 
     if not seed_decks:
