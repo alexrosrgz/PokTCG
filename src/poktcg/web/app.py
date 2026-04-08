@@ -22,12 +22,58 @@ _running = False
 _run_lock = threading.Lock()
 
 STATIC_DIR = Path(__file__).parent / "static"
+DECKS_DIR = Path(__file__).parent.parent.parent.parent / "data" / "decks"
+SAVED_DECKS_FILE = DECKS_DIR / "saved_decks.json"
+
+def _ensure_decks_file():
+    if not DECKS_DIR.exists():
+        DECKS_DIR.mkdir(parents=True)
+    if not SAVED_DECKS_FILE.exists():
+        SAVED_DECKS_FILE.write_text("{}")
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = STATIC_DIR / "index.html"
     return HTMLResponse(html_path.read_text())
+
+
+@app.get("/api/saved_decks")
+async def get_saved_decks():
+    _ensure_decks_file()
+    try:
+        return json.loads(SAVED_DECKS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+@app.post("/api/saved_decks")
+async def save_deck(request: Request):
+    _ensure_decks_file()
+    body = await request.json()
+    name = body.get("name")
+    if not name:
+        return {"error": "Name is required"}
+    try:
+        data = json.loads(SAVED_DECKS_FILE.read_text())
+    except Exception:
+        data = {}
+    data[name] = body.get("deck")
+    SAVED_DECKS_FILE.write_text(json.dumps(data, indent=2))
+    return {"success": True}
+
+
+@app.delete("/api/saved_decks/{name}")
+async def delete_saved_deck(name: str):
+    _ensure_decks_file()
+    try:
+        data = json.loads(SAVED_DECKS_FILE.read_text())
+        if name in data:
+            del data[name]
+            SAVED_DECKS_FILE.write_text(json.dumps(data, indent=2))
+    except Exception:
+        pass
+    return {"success": True}
 
 
 @app.get("/api/cards")

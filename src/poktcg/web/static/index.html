@@ -107,6 +107,17 @@
   .image-modal.active { background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); }
   .image-modal img { position: absolute; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0); transition: all 0.25s ease-out; object-fit: contain; }
   .image-modal.active img { box-shadow: 0 10px 40px rgba(0,0,0,0.8); border-radius: 16px; }
+
+  /* Saved Decks */
+  .saved-decks { background: var(--surface); padding: 24px; border-radius: 10px; margin-bottom: 24px; display: none; }
+  .saved-decks.visible { display: block; }
+  .save-btn { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 0.9em; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+  .save-btn:hover { opacity: 0.8; }
+  .save-form { display: none; gap: 8px; align-items: center; }
+  .save-form.active { display: flex; }
+  .save-form input { background: var(--bg); color: var(--text); border: 1px solid #333; padding: 6px 12px; border-radius: 6px; font-size: 0.9em; outline: none; }
+  .delete-btn { color: var(--muted); background: none; border: none; cursor: pointer; opacity: 0.3; transition: all 0.2s; font-size: 0.85em; font-weight: bold; margin-left: 12px; padding: 4px 8px; border-radius: 4px; }
+  .delete-btn:hover { color: var(--red); opacity: 1; background: rgba(233,69,96,0.1); }
 </style>
 </head>
 <body>
@@ -162,6 +173,17 @@
       </div>
     </div>
     <button class="run" id="runBtn" onclick="startOptimization()">Run Optimizer</button>
+  </div>
+
+  <!-- Saved Decks -->
+  <div class="saved-decks" id="savedDecksPanel">
+    <h2>Saved Decks</h2>
+    <div style="margin-top: 12px; margin-bottom: 12px;">
+      <select id="savedDeckSelect" onchange="onSavedDeckSelectChanged()" style="max-width: 300px; padding: 8px 12px; border-radius: 6px; background: var(--card); color: var(--text); border: 1px solid #333; cursor: pointer;">
+        <option value="">-- Select a Saved Deck --</option>
+      </select>
+    </div>
+    <div class="deck-panel" id="savedDeckDisplay" style="display: none;"></div>
   </div>
 
   <!-- Progress -->
@@ -414,7 +436,7 @@ function showResults(data) {
     btn.onclick = () => {
       tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      renderDeck(deck, i);
+      renderDeck(deck, i, 'deckDisplay');
     };
     tabs.appendChild(btn);
   });
@@ -431,16 +453,38 @@ function cardImgUrl(card) {
   return `https://images.pokemontcg.io/${set}/${num}.png`;
 }
 
-function renderDeck(deck, index) {
-  const el = document.getElementById('deckDisplay');
+let currentDecksToSave = {};
+
+function renderDeck(deck, index, elId = 'deckDisplay', savedDeckName = null) {
+  const el = document.getElementById(elId);
+  currentDecksToSave[index] = deck;
+  
   const pokemon = deck.cards.filter(c => c.supertype === 'Pokémon').sort((a, b) => a.name.localeCompare(b.name));
   const trainers = deck.cards.filter(c => c.supertype === 'Trainer').sort((a, b) => a.name.localeCompare(b.name));
   const energy = deck.cards.filter(c => c.supertype === 'Energy').sort((a, b) => a.name.localeCompare(b.name));
 
-  let html = `<div class="deck-header">
-    <div class="fitness">${(deck.fitness * 100).toFixed(1)}% win rate</div>
-    <div class="counts">${deck.total_cards} cards: ${deck.pokemon_count}P / ${deck.trainer_count}T / ${deck.energy_count}E</div>
-  </div>`;
+  const winRateText = deck.fitness ? (deck.fitness * 100).toFixed(1) + '% win rate' : 'Saved Deck';
+
+  let html = `<div class="deck-header" style="align-items:flex-start;">
+    <div>
+      <div class="fitness">${winRateText} 
+        ${savedDeckName ? `<button class="delete-btn" onclick="deleteSavedDeck('${savedDeckName}')" title="Delete Deck">✕ Delete</button>` : ''}
+      </div>
+      <div class="counts">${deck.total_cards} cards: ${deck.pokemon_count}P / ${deck.trainer_count}T / ${deck.energy_count}E</div>
+    </div>`;
+
+  if (!savedDeckName) {
+    html += `
+    <div style="margin-left:auto;">
+      <button class="save-btn" id="saveBtn-${index}" onclick="document.getElementById('saveBtn-${index}').style.display='none'; document.getElementById('saveForm-${index}').classList.add('active');">Save Deck</button>
+      <div class="save-form" id="saveForm-${index}">
+        <input type="text" id="deckNameIn-${index}" placeholder="Deck Name...">
+        <button class="save-btn" onclick="submitSaveDeck(${index})">Confirm</button>
+      </div>
+    </div>`;
+  }
+  
+  html += `</div>`;
 
   html += renderCardSection('Pokemon', pokemon, c => {
     const meta = [];
@@ -634,6 +678,79 @@ function renderChart(history) {
   ctx.fillStyle = 'rgba(240, 201, 41, 0.9)';
   ctx.fillText('Avg', W - pad.right - 20, pad.top + 12);
 }
+
+// Saved Decks Logic
+let loadedSavedDecksData = {};
+
+async function loadSavedDecks() {
+  try {
+    const res = await fetch('/api/saved_decks');
+    loadedSavedDecksData = await res.json();
+    const keys = Object.keys(loadedSavedDecksData);
+    const panel = document.getElementById('savedDecksPanel');
+    const select = document.getElementById('savedDeckSelect');
+    const disp = document.getElementById('savedDeckDisplay');
+    
+    if (!keys.length) {
+      panel.classList.remove('visible');
+      return;
+    }
+    
+    panel.classList.add('visible');
+    select.innerHTML = '<option value="">-- Select a Saved Deck --</option>';
+    
+    keys.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+    
+    disp.style.display = 'none';
+    disp.innerHTML = '';
+  } catch (e) { console.error('Failed to load decks', e); }
+}
+
+function onSavedDeckSelectChanged() {
+  const select = document.getElementById('savedDeckSelect');
+  const disp = document.getElementById('savedDeckDisplay');
+  const name = select.value;
+  
+  if (!name || !loadedSavedDecksData[name]) {
+    disp.style.display = 'none';
+    return;
+  }
+  
+  disp.style.display = 'block';
+  // Render cleanly in the target specific container
+  renderDeck(loadedSavedDecksData[name], 1000 + name.length, 'savedDeckDisplay', name);
+}
+
+async function submitSaveDeck(index) {
+  const name = document.getElementById(`deckNameIn-${index}`).value.trim();
+  if (!name) return alert('Please enter a deck name!');
+  try {
+    await fetch('/api/saved_decks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, deck: currentDecksToSave[index] })
+    });
+    const btn = document.querySelector(`#saveForm-${index} button`);
+    btn.textContent = 'Saved!';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { loadSavedDecks(); }, 500);
+  } catch (e) { alert('Failed to save deck'); }
+}
+
+async function deleteSavedDeck(name) {
+  if (!confirm(`Are you sure you want to permanently delete the deck "${name}"?`)) return;
+  try {
+    await fetch(`/api/saved_decks/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    loadSavedDecks();
+  } catch (e) { alert('Delete failed'); }
+}
+
+loadSavedDecks();
 
 // Redraw chart on resize
 window.addEventListener('resize', () => {
