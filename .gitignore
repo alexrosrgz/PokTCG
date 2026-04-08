@@ -10,3 +10,8 @@ venv/
 .env
 .claude/
 data/decks/saved_decks.json
+
+# macOS
+.DS_Store
+**/.DS_Store
+*.DS_Store

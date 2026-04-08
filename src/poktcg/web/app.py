@@ -15,13 +15,18 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from poktcg.cards.card_db import get_card_db
 from poktcg.web.runner import run_optimization
 
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(title="PokTCG Deck Optimizer")
+
+# Mount the static directory to serve assets like favicons securely 
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Single-run lock
 _running = False
 _run_lock = threading.Lock()
 
-STATIC_DIR = Path(__file__).parent / "static"
 DECKS_DIR = Path(__file__).parent.parent.parent.parent / "data" / "decks"
 SAVED_DECKS_FILE = DECKS_DIR / "saved_decks.json"
 
