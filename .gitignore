@@ -9,3 +9,4 @@ build/
 venv/
 .env
 .claude/
+data/decks/saved_decks.json
