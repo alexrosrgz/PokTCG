@@ -542,7 +542,7 @@ function renderDeck(deck, index, elId = 'deckDisplay', savedDeckName = null) {
   let html = `<div class="deck-header" style="align-items:flex-start;">
     <div>
       <div class="fitness">${winRateText} 
-        ${savedDeckName ? `<button class="delete-btn" onclick="deleteSavedDeck('${savedDeckName}')" title="Delete Deck">✕ Delete</button>` : ''}
+        ${savedDeckName ? `<button class="delete-btn" style="color:var(--yellow); opacity:0.8" onclick="editSavedDeck('${savedDeckName.replace(/'/g, "\\'")}')">✎ Edit</button> <button class="delete-btn" onclick="deleteSavedDeck('${savedDeckName.replace(/'/g, "\\'")}')" title="Delete Deck">✕ Delete</button>` : ''}
       </div>
       <div class="counts">${deck.total_cards} cards: ${deck.pokemon_count}P / ${deck.trainer_count}T / ${deck.energy_count}E</div>
     </div>`;
@@ -822,6 +822,28 @@ async function deleteSavedDeck(name) {
     await fetch(`/api/saved_decks/${encodeURIComponent(name)}`, { method: 'DELETE' });
     loadSavedDecks();
   } catch (e) { alert('Delete failed'); }
+}
+
+function editSavedDeck(name) {
+  const deck = loadedSavedDecksData[name];
+  if (!deck) return;
+  
+  customDeckCounts = {};
+  totalCardsInDeck = 0;
+  
+  if (deck.cards) {
+    deck.cards.forEach(c => {
+      customDeckCounts[c.id] = c.count || 0;
+      totalCardsInDeck += c.count || 0;
+    });
+  }
+  
+  document.getElementById('builderDeckName').value = name;
+  switchMode('builder');
+  
+  if (allCards.length > 0) {
+    renderCustomDeck();
+  }
 }
 
 loadSavedDecks();
