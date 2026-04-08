@@ -168,7 +168,7 @@ class CardDB:
                      if sets is None or k in sets}
         for set_id, filename in set_files.items():
             filepath = data_dir / filename
-            with open(filepath) as f:
+            with open(filepath, encoding="utf-8") as f:
                 raw_cards = json.load(f)
 
             for raw in raw_cards:
