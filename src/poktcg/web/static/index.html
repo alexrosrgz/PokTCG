@@ -145,6 +145,21 @@
   .b-ctrl button:hover { background: var(--accent); }
   .b-name { font-size: 0.85em; flex: 1; margin: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: zoom-in; }
   .b-name:hover { color: var(--accent); }
+
+  /* Battleground */
+  .selector-toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .mini-btn { background: var(--card); color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85em; font-weight: 600; }
+  .mini-btn:hover { background: var(--accent); }
+  .mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .deck-selector-list { background: rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 12px; max-height: 260px; overflow-y: auto; }
+  .deck-selector-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; color: var(--text); }
+  .deck-selector-item + .deck-selector-item { border-top: 1px solid rgba(255,255,255,0.05); }
+  .deck-selector-item input { accent-color: var(--accent); }
+  .empty-state { background: rgba(0,0,0,0.18); border: 1px dashed rgba(255,255,255,0.12); border-radius: 8px; padding: 16px; color: var(--muted); }
+  .battle-highlights { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .battle-highlight { background: var(--card); padding: 10px 14px; border-radius: 8px; min-width: 180px; }
+  .battle-highlight .label { display: block; font-size: 0.72em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .battle-highlight .value { display: block; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -155,6 +170,7 @@
       <button class="nav-btn active" id="navOpt" onclick="switchMode('optimizer')">Optimizer</button>
       <button class="nav-btn" id="navBuild" onclick="switchMode('builder')">Deck Builder</button>
       <button class="nav-btn" id="navSaved" onclick="switchMode('saved')">Saved Decks</button>
+      <button class="nav-btn" id="navBattle" onclick="switchMode('battleground')">Battleground</button>
     </div>
   </header>
   <div id="optimizerView">
@@ -324,6 +340,97 @@
     </div>
   </div>
 
+  <!-- Battleground View -->
+  <div id="battlegroundView" style="display:none;">
+    <div class="config">
+      <h2 style="margin:0; font-size:1.4em; margin-bottom: 24px;">Battleground</h2>
+      <div style="display:flex; flex-direction:column; gap:24px;">
+        <div style="display:flex; gap:20px; flex-wrap:wrap;">
+          <div class="form-group" style="flex: 2; min-width: 280px; margin: 0;">
+            <label>Battle Mode</label>
+            <div class="chip-group">
+              <label class="chip"><input type="radio" name="battleMode" value="all_vs_all" checked> <span>All vs All</span></label>
+              <label class="chip"><input type="radio" name="battleMode" value="one_vs_all"> <span>One vs All</span></label>
+            </div>
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 180px; margin: 0;">
+            <label>Rounds Per Matchup</label>
+            <input id="battleRounds" type="number" min="1" value="20" class="search-input" style="margin-bottom:0;">
+          </div>
+        </div>
+
+        <div id="battleEmptyState" class="empty-state" style="display:none;"></div>
+
+        <div id="battleAllVsAllSection">
+          <div class="form-group" style="margin:0;">
+            <label>Participants</label>
+            <div class="selector-toolbar">
+              <button type="button" class="mini-btn" onclick="setBattleCheckboxGroup('battleDeckList', true)">Select All</button>
+              <button type="button" class="mini-btn" onclick="setBattleCheckboxGroup('battleDeckList', false)">Clear</button>
+            </div>
+            <div class="deck-selector-list" id="battleDeckList"></div>
+          </div>
+        </div>
+
+        <div id="battleOneVsAllSection" style="display:none;">
+          <div style="display:flex; gap:20px; flex-wrap:wrap;">
+            <div class="form-group" style="flex: 1; min-width: 240px; margin: 0;">
+              <label>Primary Deck</label>
+              <select id="battlePrimaryDeck"></select>
+            </div>
+            <div class="form-group" style="flex: 2; min-width: 280px; margin: 0;">
+              <label>Opponents</label>
+              <div class="selector-toolbar">
+                <button type="button" class="mini-btn" onclick="setBattleCheckboxGroup('battleOpponentList', true)">Select All</button>
+                <button type="button" class="mini-btn" onclick="setBattleCheckboxGroup('battleOpponentList', false)">Clear</button>
+              </div>
+              <div class="deck-selector-list" id="battleOpponentList"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 24px; margin-top: 8px; display: flex; justify-content: flex-end;">
+          <button class="run" id="battleRunBtn" onclick="startBattleground()" style="margin:0; min-width:250px;">Run Battleground</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="progress-area" id="battleProgressArea">
+      <h2>Battle Progress</h2>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="battleProgressBar"></div>
+        <div class="progress-bar-text" id="battleProgressText">0%</div>
+      </div>
+      <div class="log" id="battleLog"></div>
+    </div>
+
+    <div class="results-area" id="battleResultsArea">
+      <div class="results-grid">
+        <div class="insights-panel full-width">
+          <h2>Battle Summary</h2>
+          <div class="insights-grid" id="battleInsightsGrid"></div>
+          <div class="battle-highlights" id="battleHighlights"></div>
+          <div class="win-conditions" id="battleWinConditions"></div>
+        </div>
+
+        <div class="matchup-panel full-width">
+          <h2>Standings</h2>
+          <div id="battleStandingsTable"></div>
+        </div>
+
+        <div class="matchup-panel full-width" id="battleMatrixPanel" style="display:none;">
+          <h2>Win Rate Matrix</h2>
+          <div id="battleMatrixTable"></div>
+        </div>
+
+        <div class="matchup-panel full-width">
+          <h2>Matchup Results</h2>
+          <div id="battlePairingsTable"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Zoom Modal -->
@@ -339,7 +446,13 @@ document.querySelectorAll('input[name="mode"]').forEach(r => {
   });
 });
 
+document.querySelectorAll('input[name="battleMode"]').forEach(r => {
+  r.addEventListener('change', updateBattlegroundModeUI);
+});
+document.getElementById('battlePrimaryDeck').addEventListener('change', renderBattleOpponentList);
+
 let currentResults = null;
+let currentBattlegroundResults = null;
 
 async function startOptimization() {
   const btn = document.getElementById('runBtn');
@@ -430,8 +543,9 @@ function handleEvent(type, data) {
   }
 }
 
-function addLog(cls, text) {
-  const log = document.getElementById('log');
+function addLog(cls, text, logId = 'log') {
+  const log = document.getElementById(logId);
+  if (!log) return;
   const div = document.createElement('div');
   div.className = cls;
   div.textContent = text;
@@ -617,32 +731,15 @@ function renderCardSection(title, cards, metaFn) {
   return html;
 }
 
-function renderInsights(insights, fitnessHistory) {
-  const grid = document.getElementById('insightsGrid');
-  const condEl = document.getElementById('winConditions');
-  if (!insights) { grid.innerHTML = ''; condEl.innerHTML = ''; return; }
+function renderWinConditions(elId, conds) {
+  const condEl = document.getElementById(elId);
+  if (!condEl) return;
 
-  // Format time
-  const mins = Math.floor(insights.total_time_sec / 60);
-  const secs = Math.round(insights.total_time_sec % 60);
-  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-
-  // Stat cards
-  const stats = [
-    { value: insights.total_games.toLocaleString(), label: 'Games Played' },
-    { value: insights.games_per_sec.toLocaleString(), label: 'Games / Second' },
-    { value: timeStr, label: 'Total Time' },
-    { value: insights.avg_turns_per_game, label: 'Avg Turns / Game' },
-  ];
-
-  grid.innerHTML = stats.map(s =>
-    `<div class="insight-stat"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`
-  ).join('');
-
-  // Win conditions breakdown
-  const conds = insights.win_conditions;
-  const total = Object.values(conds).reduce((a, b) => a + b, 0);
-  if (!total) { condEl.innerHTML = ''; return; }
+  const total = Object.values(conds || {}).reduce((a, b) => a + b, 0);
+  if (!total) {
+    condEl.innerHTML = '';
+    return;
+  }
 
   const condColors = {
     'all prizes taken': 'var(--green)',
@@ -669,6 +766,34 @@ function renderInsights(insights, fitnessHistory) {
       <span>${label}</span>
     </div>`;
   }).join('');
+}
+
+function renderInsights(insights, fitnessHistory) {
+  const grid = document.getElementById('insightsGrid');
+  if (!insights) {
+    grid.innerHTML = '';
+    renderWinConditions('winConditions', {});
+    return;
+  }
+
+  // Format time
+  const mins = Math.floor(insights.total_time_sec / 60);
+  const secs = Math.round(insights.total_time_sec % 60);
+  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+  // Stat cards
+  const stats = [
+    { value: insights.total_games.toLocaleString(), label: 'Games Played' },
+    { value: insights.games_per_sec.toLocaleString(), label: 'Games / Second' },
+    { value: timeStr, label: 'Total Time' },
+    { value: insights.avg_turns_per_game, label: 'Avg Turns / Game' },
+  ];
+
+  grid.innerHTML = stats.map(s =>
+    `<div class="insight-stat"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`
+  ).join('');
+
+  renderWinConditions('winConditions', insights.win_conditions || {});
 }
 
 function renderMatchups(matchups) {
@@ -780,6 +905,287 @@ function renderChart(history) {
   ctx.fillText('Avg', W - pad.right - 20, pad.top + 12);
 }
 
+function updateBattlegroundModeUI() {
+  const mode = document.querySelector('input[name="battleMode"]:checked')?.value || 'all_vs_all';
+  document.getElementById('battleAllVsAllSection').style.display = mode === 'all_vs_all' ? 'block' : 'none';
+  document.getElementById('battleOneVsAllSection').style.display = mode === 'one_vs_all' ? 'block' : 'none';
+}
+
+function setBattleCheckboxGroup(containerId, checked) {
+  const inputs = document.querySelectorAll(`#${containerId} input[type="checkbox"]:not(:disabled)`);
+  inputs.forEach(input => { input.checked = checked; });
+}
+
+function renderBattlegroundSelectors() {
+  const names = Object.keys(loadedSavedDecksData).sort((a, b) => a.localeCompare(b));
+  const emptyState = document.getElementById('battleEmptyState');
+  const runBtn = document.getElementById('battleRunBtn');
+  const deckList = document.getElementById('battleDeckList');
+  const primarySelect = document.getElementById('battlePrimaryDeck');
+
+  if (names.length < 2) {
+    emptyState.style.display = 'block';
+    emptyState.textContent = 'Save at least two decks to use Battleground.';
+    runBtn.disabled = true;
+  } else {
+    emptyState.style.display = 'none';
+    emptyState.textContent = '';
+    runBtn.disabled = false;
+  }
+
+  deckList.innerHTML = names.length
+    ? names.map((name, index) => `
+        <label class="deck-selector-item">
+          <input type="checkbox" value="${name.replace(/"/g, '&quot;')}" ${index < 2 ? 'checked' : ''}>
+          <span>${name}</span>
+        </label>
+      `).join('')
+    : '<div style="color:var(--muted)">No saved decks available.</div>';
+
+  primarySelect.innerHTML = names.length
+    ? names.map(name => `<option value="${name.replace(/"/g, '&quot;')}">${name}</option>`).join('')
+    : '<option value="">No saved decks</option>';
+
+  renderBattleOpponentList();
+  updateBattlegroundModeUI();
+}
+
+function renderBattleOpponentList() {
+  const opponentList = document.getElementById('battleOpponentList');
+  const names = Object.keys(loadedSavedDecksData).sort((a, b) => a.localeCompare(b));
+  const primary = document.getElementById('battlePrimaryDeck').value;
+  const opponents = names.filter(name => name !== primary);
+
+  opponentList.innerHTML = opponents.length
+    ? opponents.map(name => `
+        <label class="deck-selector-item">
+          <input type="checkbox" value="${name.replace(/"/g, '&quot;')}" checked>
+          <span>${name}</span>
+        </label>
+      `).join('')
+    : '<div style="color:var(--muted)">No eligible opponent decks.</div>';
+}
+
+async function startBattleground() {
+  const btn = document.getElementById('battleRunBtn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+
+  const progressArea = document.getElementById('battleProgressArea');
+  const resultsArea = document.getElementById('battleResultsArea');
+  progressArea.classList.add('visible');
+  resultsArea.classList.remove('visible');
+  document.getElementById('battleProgressBar').style.width = '0%';
+  document.getElementById('battleProgressText').textContent = '0%';
+  document.getElementById('battleLog').innerHTML = '';
+
+  const mode = document.querySelector('input[name="battleMode"]:checked')?.value || 'all_vs_all';
+  const rounds = Math.max(1, Number(document.getElementById('battleRounds').value || 20));
+  const payload = { mode, rounds, deck_names: [], primary_deck: null, opponent_names: [] };
+
+  if (mode === 'all_vs_all') {
+    payload.deck_names = [...document.querySelectorAll('#battleDeckList input:checked')].map(input => input.value);
+  } else {
+    payload.primary_deck = document.getElementById('battlePrimaryDeck').value || null;
+    payload.opponent_names = [...document.querySelectorAll('#battleOpponentList input:checked')].map(input => input.value);
+  }
+
+  try {
+    const response = await fetch('/api/battleground', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      let eventType = null;
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ') && eventType) {
+          const data = JSON.parse(line.slice(6));
+          handleBattlegroundEvent(eventType, data);
+          eventType = null;
+        }
+      }
+    }
+  } catch (e) {
+    addLog('status', 'Connection error: ' + e.message, 'battleLog');
+  }
+
+  btn.disabled = Object.keys(loadedSavedDecksData).length < 2;
+  btn.textContent = 'Run Battleground';
+}
+
+function handleBattlegroundEvent(type, data) {
+  if (type === 'progress') {
+    const pct = Math.round((data.completed_matchups / Math.max(1, data.total_matchups)) * 100);
+    document.getElementById('battleProgressBar').style.width = pct + '%';
+    document.getElementById('battleProgressText').textContent =
+      `${data.completed_matchups}/${data.total_matchups} matchups | ${data.completed_games}/${data.total_games} games`;
+    addLog('gen', `Progress: ${data.current_matchup} (${data.completed_matchups}/${data.total_matchups})`, 'battleLog');
+  } else if (type === 'status') {
+    addLog('status', data.message, 'battleLog');
+  } else if (type === 'complete') {
+    document.getElementById('battleProgressBar').style.width = '100%';
+    document.getElementById('battleProgressText').textContent = 'Complete!';
+    addLog('status', 'Battleground complete!', 'battleLog');
+    currentBattlegroundResults = data;
+    showBattlegroundResults(data);
+  } else if (type === 'error') {
+    addLog('status', 'Error: ' + data.message, 'battleLog');
+  }
+}
+
+function formatBattleTime(totalSeconds) {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = Math.round(totalSeconds % 60);
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+}
+
+function renderBattleInsights(insights) {
+  const grid = document.getElementById('battleInsightsGrid');
+  const highlights = document.getElementById('battleHighlights');
+  if (!insights) {
+    grid.innerHTML = '';
+    highlights.innerHTML = '';
+    renderWinConditions('battleWinConditions', {});
+    return;
+  }
+
+  const stats = [
+    { value: insights.best_performing_deck || '-', label: 'Best Deck' },
+    { value: insights.weakest_deck || '-', label: 'Weakest Deck' },
+    { value: insights.total_decks, label: 'Decks Entered' },
+    { value: insights.total_matchups, label: 'Matchups Played' },
+    { value: insights.total_games, label: 'Games Played' },
+    { value: formatBattleTime(insights.total_time_sec || 0), label: 'Total Time' },
+    { value: insights.games_per_sec, label: 'Games / Second' },
+    { value: insights.avg_turns_per_game, label: 'Avg Turns / Game' },
+  ];
+  grid.innerHTML = stats.map(stat =>
+    `<div class="insight-stat"><div class="stat-value">${stat.value}</div><div class="stat-label">${stat.label}</div></div>`
+  ).join('');
+
+  const highlightItems = [
+    { label: 'Closest Matchup', value: insights.closest_matchup },
+    { label: 'Most Lopsided', value: insights.most_lopsided_matchup },
+    { label: 'Longest Matchup', value: insights.longest_matchup },
+  ].filter(item => item.value && item.value.label);
+
+  highlights.innerHTML = highlightItems.map(item => `
+    <div class="battle-highlight">
+      <span class="label">${item.label}</span>
+      <span class="value">${item.value.label}</span>
+      <span style="color:var(--muted); font-size:0.85em;">${item.value.detail}</span>
+    </div>
+  `).join('');
+
+  renderWinConditions('battleWinConditions', insights.win_conditions || {});
+}
+
+function renderBattleStandings(standings) {
+  const el = document.getElementById('battleStandingsTable');
+  if (!standings || !standings.length) {
+    el.innerHTML = '<p style="color:var(--muted)">No standings available.</p>';
+    return;
+  }
+
+  let html = '<table class="matchup"><tr><th>Rank</th><th>Deck</th><th>Win Rate</th><th>Wins</th><th>Losses</th><th>Games</th><th>Avg Turns</th></tr>';
+  standings.forEach(row => {
+    const color = row.win_rate > 0.55 ? 'var(--green)' : row.win_rate < 0.45 ? 'var(--red)' : 'var(--yellow)';
+    html += `<tr>
+      <td>${row.rank}</td>
+      <td style="text-align:left">${row.name}</td>
+      <td style="color:${color}">${(row.win_rate * 100).toFixed(1)}%</td>
+      <td>${row.wins}</td>
+      <td>${row.losses}</td>
+      <td>${row.games}</td>
+      <td>${row.avg_turns.toFixed(1)}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  el.innerHTML = html;
+}
+
+function summarizeBattleConditions(winConditions) {
+  const entries = Object.entries(winConditions || {}).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return '-';
+  return entries.slice(0, 2).map(([reason, count]) => `${reason} (${count})`).join(', ');
+}
+
+function renderBattlePairings(pairings) {
+  const el = document.getElementById('battlePairingsTable');
+  if (!pairings || !pairings.length) {
+    el.innerHTML = '<p style="color:var(--muted)">No matchup results available.</p>';
+    return;
+  }
+
+  let html = '<table class="matchup"><tr><th>Matchup</th><th>Record</th><th>Deck A Win Rate</th><th>Avg Turns</th><th>Win Conditions</th></tr>';
+  pairings.forEach(pairing => {
+    const color = pairing.win_rate_a > 0.55 ? 'var(--green)' : pairing.win_rate_a < 0.45 ? 'var(--red)' : 'var(--yellow)';
+    html += `<tr>
+      <td style="text-align:left">${pairing.deck_a} vs ${pairing.deck_b}</td>
+      <td>${pairing.wins_a}-${pairing.wins_b}</td>
+      <td style="color:${color}">${(pairing.win_rate_a * 100).toFixed(1)}%</td>
+      <td>${pairing.avg_turns.toFixed(1)}</td>
+      <td style="text-align:left">${summarizeBattleConditions(pairing.win_conditions)}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  el.innerHTML = html;
+}
+
+function renderBattleMatrix(matrix) {
+  const panel = document.getElementById('battleMatrixPanel');
+  const el = document.getElementById('battleMatrixTable');
+  if (!matrix || !matrix.rows || !matrix.rows.length) {
+    panel.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  let html = '<table class="matchup"><tr><th>Deck</th>';
+  matrix.headers.forEach(name => { html += `<th>${name}</th>`; });
+  html += '</tr>';
+
+  matrix.rows.forEach(row => {
+    html += `<tr><td style="text-align:left">${row.name}</td>`;
+    row.values.forEach(value => {
+      if (value === null || value === undefined) {
+        html += '<td>-</td>';
+      } else {
+        const color = value > 0.55 ? 'var(--green)' : value < 0.45 ? 'var(--red)' : 'var(--yellow)';
+        html += `<td style="color:${color}">${(value * 100).toFixed(1)}%</td>`;
+      }
+    });
+    html += '</tr>';
+  });
+  html += '</table>';
+  el.innerHTML = html;
+  panel.style.display = 'block';
+}
+
+function showBattlegroundResults(data) {
+  const resultsArea = document.getElementById('battleResultsArea');
+  resultsArea.classList.add('visible');
+  renderBattleInsights(data.insights);
+  renderBattleStandings(data.standings);
+  renderBattlePairings(data.pairings);
+  renderBattleMatrix(data.matrix);
+}
+
 // Saved Decks Logic
 let loadedSavedDecksData = {};
 
@@ -787,7 +1193,7 @@ async function loadSavedDecks() {
   try {
     const res = await fetch('/api/saved_decks');
     loadedSavedDecksData = await res.json();
-    const keys = Object.keys(loadedSavedDecksData);
+    const keys = Object.keys(loadedSavedDecksData).sort((a, b) => a.localeCompare(b));
     const panel = document.getElementById('savedDecksPanel');
     const disp = document.getElementById('savedDeckDisplay');
     
@@ -806,6 +1212,9 @@ async function loadSavedDecks() {
 
     if (!keys.length) {
       panel.classList.remove('visible');
+      disp.style.display = 'none';
+      disp.innerHTML = '';
+      renderBattlegroundSelectors();
       return;
     }
     
@@ -833,6 +1242,8 @@ async function loadSavedDecks() {
       disp.style.display = 'none';
       disp.innerHTML = '';
     }
+
+    renderBattlegroundSelectors();
   } catch (e) { console.error('Failed to load decks', e); }
 }
 
@@ -909,12 +1320,15 @@ function switchMode(mode) {
   document.getElementById('navOpt').classList.toggle('active', mode === 'optimizer');
   document.getElementById('navBuild').classList.toggle('active', mode === 'builder');
   document.getElementById('navSaved').classList.toggle('active', mode === 'saved');
+  document.getElementById('navBattle').classList.toggle('active', mode === 'battleground');
   
   document.getElementById('optimizerView').style.display = mode === 'optimizer' ? 'block' : 'none';
   document.getElementById('builderView').style.display = mode === 'builder' ? 'block' : 'none';
   document.getElementById('savedDecksPanel').style.display = mode === 'saved' ? 'block' : 'none';
+  document.getElementById('battlegroundView').style.display = mode === 'battleground' ? 'block' : 'none';
   
   if (mode === 'builder' && allCards.length === 0) fetchLibrary();
+  if (mode === 'battleground') renderBattlegroundSelectors();
 }
 
 async function fetchLibrary() {

@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from poktcg.cards.card_db import get_card_db
-from poktcg.web.runner import run_optimization
+from poktcg.web.runner import run_battleground, run_optimization
 
 from fastapi.staticfiles import StaticFiles
 
@@ -139,6 +139,63 @@ async def optimize(request: Request):
             queue.put(("error", {"message": str(e)}))
         finally:
             queue.put(None)  # Sentinel
+            with _run_lock:
+                _running = False
+
+    thread = threading.Thread(target=run_in_thread, daemon=True)
+    thread.start()
+
+    return StreamingResponse(
+        _event_stream(queue),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/battleground")
+async def battleground(request: Request):
+    global _running
+
+    with _run_lock:
+        if _running:
+            return StreamingResponse(
+                _error_stream("An optimization or battleground run is already running. Please wait."),
+                media_type="text/event-stream",
+            )
+        _running = True
+
+    body = await request.json()
+    mode = body.get("mode", "all_vs_all")
+    rounds = body.get("rounds", 20)
+    deck_names = body.get("deck_names", [])
+    primary_deck = body.get("primary_deck")
+    opponent_names = body.get("opponent_names", [])
+
+    queue: Queue = Queue()
+
+    def progress_callback(event_type: str, data: dict) -> None:
+        queue.put((event_type, data))
+
+    def run_in_thread():
+        global _running
+        try:
+            result = run_battleground(
+                mode=mode,
+                rounds=rounds,
+                deck_names=deck_names,
+                primary_deck=primary_deck,
+                opponent_names=opponent_names,
+                progress_callback=progress_callback,
+                num_workers=max(1, (mp.cpu_count() or 2) - 2),
+            )
+            queue.put(("complete", result))
+        except Exception as e:
+            queue.put(("error", {"message": str(e)}))
+        finally:
+            queue.put(None)
             with _run_lock:
                 _running = False
 
