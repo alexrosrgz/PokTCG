@@ -118,11 +118,38 @@
   .save-form input { background: var(--bg); color: var(--text); border: 1px solid #333; padding: 6px 12px; border-radius: 6px; font-size: 0.9em; outline: none; }
   .delete-btn { color: var(--muted); background: none; border: none; cursor: pointer; opacity: 0.3; transition: all 0.2s; font-size: 0.85em; font-weight: bold; margin-left: 12px; padding: 4px 8px; border-radius: 4px; }
   .delete-btn:hover { color: var(--red); opacity: 1; background: rgba(233,69,96,0.1); }
+
+  /* Deck Builder */
+  .top-nav { text-align: center; margin-bottom: 20px; display: flex; justify-content: center; gap: 12px; }
+  .nav-btn { background: var(--surface); color: var(--muted); border: none; padding: 8px 24px; font-size: 1em; cursor: pointer; border-radius: 8px; font-weight: bold; transition: all 0.2s;}
+  .nav-btn.active { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(233, 69, 96, 0.4); }
+  .nav-btn:hover:not(.active) { background: #2a3a5a; color: #fff; }
+  
+  .builder-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+  @media (max-width: 768px) { .builder-grid { grid-template-columns: 1fr; } }
+  .builder-panel { background: var(--surface); padding: 18px; border-radius: 10px; }
+  .library-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; max-height: 60vh; overflow-y: auto; padding-right: 10px; }
+  .library-card { cursor: pointer; position: relative; text-align: center; }
+  .library-card img { width: 100%; border-radius: 6px; }
+  .library-card:hover { transform: scale(1.05); }
+  .search-input { width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid #333; background: var(--bg); color: #fff; margin-bottom: 16px; font-size: 1em; outline: none; }
+  .search-input:focus { border-color: var(--accent); }
+  .builder-deck-list { max-height: 55vh; overflow-y: auto; margin-bottom: 16px;}
+  .builder-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); align-items:center; }
+  .b-ctrl button { background: var(--card); color: #fff; border:none; width:26px; height:26px; border-radius:4px; cursor: pointer; font-weight:bold;}
+  .b-ctrl button:hover { background: var(--accent); }
+  .b-name { font-size: 0.85em; flex: 1; margin: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: zoom-in; }
+  .b-name:hover { color: var(--accent); }
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>Pok<span>TCG</span> Deck Optimizer</h1>
+  <h1 style="margin-bottom: 10px;">Pok<span>TCG</span></h1>
+  <div class="top-nav">
+    <button class="nav-btn active" id="navOpt" onclick="switchMode('optimizer')">Optimizer</button>
+    <button class="nav-btn" id="navBuild" onclick="switchMode('builder')">Deck Builder</button>
+  </div>
+  <div id="optimizerView">
   <p class="subtitle">Genetic algorithm deck builder for the Base-Fossil format</p>
 
   <!-- Config -->
@@ -227,6 +254,53 @@
       </div>
     </div>
   </div>
+  </div> <!-- end optimizerView-->
+
+  <!-- Builder View -->
+  <div id="builderView" style="display:none;">
+    <div class="builder-grid">
+      <div class="builder-panel">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 12px;">
+          <h2 style="margin:0; font-size:1.4em;">Card Library</h2>
+          <div id="libraryCount" style="font-size:0.85em; color:var(--muted); font-weight:bold;">0 Cards Available</div>
+        </div>
+        <div style="display:flex; gap: 8px; margin-bottom: 16px; flex-wrap:wrap;">
+          <input type="text" id="libSearch" class="search-input" style="margin-bottom:0; flex: 2; min-width:140px;" placeholder="Search by name..." oninput="renderLibrary()">
+          <select id="libFilter" onchange="renderLibrary()" style="flex:1; padding:10px; border-radius:8px; border:1px solid #333; background:var(--bg); color:#fff; outline:none; cursor:pointer;">
+            <option value="all">Filter...</option>
+            <optgroup label="Supertype">
+              <option value="super:Pokémon">&nbsp;&nbsp;Pokémon</option>
+              <option value="super:Trainer">&nbsp;&nbsp;Trainer</option>
+              <option value="super:Energy">&nbsp;&nbsp;Energy</option>
+            </optgroup>
+            <optgroup label="Subtype">
+              <option value="sub:Basic">&nbsp;&nbsp;Basic Pokémon / Energy</option>
+              <option value="sub:Stage 1">&nbsp;&nbsp;Stage 1</option>
+              <option value="sub:Stage 2">&nbsp;&nbsp;Stage 2</option>
+              <option value="sub:Special">&nbsp;&nbsp;Special Energy</option>
+            </optgroup>
+          </select>
+          <select id="libSort" onchange="renderLibrary()" style="flex:1; padding:10px; border-radius:8px; border:1px solid #333; background:var(--bg); color:#fff; outline:none; cursor:pointer;">
+            <option style="display:none;" value="default">Sort...</option>
+            <option value="nameAsc">Name (A-Z)</option>
+            <option value="hpDesc">Highest HP</option>
+          </select>
+        </div>
+        <div class="library-grid" id="libraryGrid"><div style="color:var(--muted)">Loading library...</div></div>
+      </div>
+      <div class="builder-panel" style="display:flex; flex-direction:column;">
+        <h2 style="margin-top:0">Your Deck</h2>
+        <div style="font-size: 0.8em; color:var(--muted); margin-bottom:8px;" id="builderCounts">0 / 60 Cards</div>
+        <div class="builder-deck-list" id="builderDeckList"></div>
+        
+        <div style="margin-top:auto; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
+          <input type="text" id="builderDeckName" class="search-input" style="margin-bottom:10px" placeholder="Deck Name...">
+          <button class="run" style="width:100%; margin:0" onclick="saveCustomDeck()">Save Deck</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Zoom Modal -->
@@ -758,6 +832,177 @@ window.addEventListener('resize', () => {
     renderChart(currentResults.fitness_history);
   }
 });
+
+// --- Deck Builder Logic ---
+let allCards = [];
+let customDeckCounts = {};
+let totalCardsInDeck = 0;
+
+function switchMode(mode) {
+  document.getElementById('navOpt').classList.toggle('active', mode === 'optimizer');
+  document.getElementById('navBuild').classList.toggle('active', mode === 'builder');
+  document.getElementById('optimizerView').style.display = mode === 'optimizer' ? 'block' : 'none';
+  document.getElementById('builderView').style.display = mode === 'builder' ? 'block' : 'none';
+  if (mode === 'builder' && allCards.length === 0) fetchLibrary();
+}
+
+async function fetchLibrary() {
+  try {
+    const res = await fetch('/api/cards');
+    const data = await res.json();
+    allCards = data.cards;
+    renderLibrary();
+    renderCustomDeck();
+  } catch(e) { console.error(e); }
+}
+
+function renderLibrary() {
+  const grid = document.getElementById('libraryGrid');
+  const query = document.getElementById('libSearch').value.toLowerCase();
+  const filter = document.getElementById('libFilter').value;
+  const sort = document.getElementById('libSort').value;
+  
+  let filteredCards = allCards.filter(c => {
+    if (query && !c.name.toLowerCase().includes(query)) return false;
+    if (filter && filter !== 'all') {
+      const parts = filter.split(':');
+      if (parts[0] === 'super' && c.supertype !== parts[1]) return false;
+      if (parts[0] === 'sub' && (!c.subtypes || !c.subtypes.includes(parts[1]))) return false;
+    }
+    return true;
+  });
+
+  if (sort === 'nameAsc') {
+    filteredCards.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (sort === 'hpDesc') {
+    filteredCards.sort((a, b) => (b.hp || 0) - (a.hp || 0));
+  }
+  
+  let html = '';
+  const maxResults = 500;
+  let count = 0;
+  
+  for (const c of filteredCards) {
+    if (count > maxResults) break;
+    
+    const imgUrl = cardImgUrl(c);
+    html += `<div class="library-card" onclick="addCardToBuilder('${c.id}')">
+      <img src="${imgUrl}" loading="lazy" onerror="this.style.background='var(--card)';this.style.minHeight='100px';this.removeAttribute('src')">
+    </div>`;
+    count++;
+  }
+  
+  grid.innerHTML = html || '<div style="color:var(--muted)">No cards found. Try adjusting filters!</div>';
+  
+  let countStr = '';
+  if (query || filter !== 'all') countStr = `Showing ${count} of ${allCards.length} Cards`;
+  else countStr = `${allCards.length} Cards Available`;
+  
+  document.getElementById('libraryCount').innerText = countStr;
+}
+
+function addCardToBuilder(id) {
+  const card = allCards.find(c => c.id === id);
+  if (!card) return;
+  
+  if (totalCardsInDeck >= 60) return alert('Deck is already full (60 cards max)!');
+  
+  const currentCount = customDeckCounts[id] || 0;
+  const isBasicEnergy = card.supertype === 'Energy' && card.subtypes.includes('Basic');
+  
+  if (!isBasicEnergy && currentCount >= 4) {
+    return alert('You can only have up to 4 copies of a card (except Basic Energy rules).');
+  }
+  
+  customDeckCounts[id] = currentCount + 1;
+  totalCardsInDeck++;
+  renderCustomDeck();
+}
+
+function subCardFromBuilder(id) {
+  if (!customDeckCounts[id]) return;
+  customDeckCounts[id]--;
+  if (customDeckCounts[id] === 0) delete customDeckCounts[id];
+  totalCardsInDeck--;
+  renderCustomDeck();
+}
+
+function renderCustomDeck() {
+  const list = document.getElementById('builderDeckList');
+  const countsEl = document.getElementById('builderCounts');
+  
+  let pCount=0, tCount=0, eCount=0;
+  
+  let deckArr = Object.entries(customDeckCounts).map(([id, count]) => {
+    const c = allCards.find(card => card.id === id);
+    if(c.supertype === 'Pokémon') pCount += count;
+    else if(c.supertype === 'Trainer') tCount += count;
+    else eCount += count;
+    return { ...c, count };
+  });
+  
+  deckArr.sort((a,b) => {
+    const order = { 'Pokémon':1, 'Trainer':2, 'Energy':3 };
+    if(order[a.supertype] !== order[b.supertype]) return order[a.supertype] - order[b.supertype];
+    return a.name.localeCompare(b.name);
+  });
+  
+  countsEl.innerHTML = `<b>${totalCardsInDeck} / 60</b> Cards &nbsp;|&nbsp; ${pCount}P / ${tCount}T / ${eCount}E`;
+  
+  let html = '';
+  deckArr.forEach(c => {
+    html += `<div class="builder-item">
+      <div style="width: 20px; text-align:center; color:${c.supertype==='Pokémon'?'var(--accent)':c.supertype==='Trainer'?'var(--yellow)':'var(--green)'};" title="${c.supertype}">●</div>
+      <div class="b-name" onclick="zoomCard(event, '${cardImgUrl(c)}', this)">${c.name}</div>
+      <div class="b-ctrl">
+        <button onclick="subCardFromBuilder('${c.id}')">-</button>
+        <span class="b-count">${c.count}</span>
+        <button onclick="addCardToBuilder('${c.id}')">+</button>
+      </div>
+    </div>`;
+  });
+  list.innerHTML = html;
+}
+
+async function saveCustomDeck() {
+  if (totalCardsInDeck !== 60) return alert('Deck must have exactly 60 cards to be completely optimized!');
+  const name = document.getElementById('builderDeckName').value.trim();
+  if (!name) return alert('Please enter a name for your custom deck.');
+  
+  let pCount=0, tCount=0, eCount=0;
+  const cardsPayload = Object.entries(customDeckCounts).map(([id, count]) => {
+    const c = allCards.find(card => card.id === id);
+    if(c.supertype === 'Pokémon') pCount += count;
+    else if(c.supertype === 'Trainer') tCount += count;
+    else eCount += count;
+    return { ...c, count };
+  });
+  
+  const payload = {
+    name,
+    deck: {
+      fitness: null,
+      total_cards: totalCardsInDeck,
+      pokemon_count: pCount,
+      trainer_count: tCount,
+      energy_count: eCount,
+      cards: cardsPayload
+    }
+  };
+  
+  try {
+    await fetch('/api/saved_decks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    alert('Deck perfectly saved to your library!');
+    document.getElementById('builderDeckName').value = '';
+    loadSavedDecks();
+    switchMode('optimizer'); // hop back to view it dynamically
+  } catch (e) { alert('Failed to successfully save manual deck'); }
+}
+
 </script>
 </body>
 </html>
