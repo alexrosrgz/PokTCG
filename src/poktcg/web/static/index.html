@@ -134,13 +134,20 @@
   @media (max-width: 768px) { .builder-grid { grid-template-columns: 1fr; } }
   .builder-panel { background: var(--surface); padding: 18px; border-radius: 10px; }
   .library-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; max-height: 60vh; overflow-y: auto; padding-right: 10px; }
-  .library-card { cursor: pointer; position: relative; text-align: center; }
-  .library-card img { width: 100%; border-radius: 6px; }
+  .library-card { cursor: pointer; position: relative; text-align: center; transition: transform 0.15s ease; }
+  .library-card img { width: 100%; border-radius: 6px; transition: box-shadow 0.25s ease; }
   .library-card:hover { transform: scale(1.05); }
+  .library-card.in-deck-pokemon img { box-shadow: 0 0 8px 4px rgba(233, 69, 96, 0.7); }
+  .library-card.in-deck-trainer img { box-shadow: 0 0 8px 4px rgba(240, 201, 41, 0.7); }
+  .library-card.in-deck-energy img { box-shadow: 0 0 8px 4px rgba(78, 204, 163, 0.7); }
+  .library-card .deck-count-badge { position: absolute; top: 4px; right: 4px; color: #fff; font-size: 0.7em; font-weight: bold; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; pointer-events: none; }
   .search-input { width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid #333; background: var(--bg); color: #fff; margin-bottom: 16px; font-size: 1em; outline: none; }
   .search-input:focus { border-color: var(--accent); }
   .builder-deck-list { max-height: 55vh; overflow-y: auto; margin-bottom: 16px;}
-  .builder-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); align-items:center; }
+  .builder-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); align-items:center; transition: background 0.2s ease; border-radius: 4px; padding: 6px 8px; }
+  .builder-item.highlight-pokemon { background: rgba(233, 69, 96, 0.15); }
+  .builder-item.highlight-trainer { background: rgba(240, 201, 41, 0.15); }
+  .builder-item.highlight-energy { background: rgba(78, 204, 163, 0.15); }
   .b-ctrl button { background: var(--card); color: #fff; border:none; width:26px; height:26px; border-radius:4px; cursor: pointer; font-weight:bold;}
   .b-ctrl button:hover { background: var(--accent); }
   .b-name { font-size: 0.85em; flex: 1; margin: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: zoom-in; }
@@ -1374,8 +1381,12 @@ function renderLibrary() {
     if (count > maxResults) break;
     
     const imgUrl = cardImgUrl(c);
-    html += `<div class="library-card" onclick="addCardToBuilder('${c.id}')">
+    const inDeck = customDeckCounts[c.id] || 0;
+    const deckClass = inDeck ? ` in-deck-${c.supertype === 'Pokémon' ? 'pokemon' : c.supertype === 'Trainer' ? 'trainer' : 'energy'}` : '';
+    const badgeColor = c.supertype === 'Pokémon' ? 'var(--accent)' : c.supertype === 'Trainer' ? 'var(--yellow)' : 'var(--green)';
+    html += `<div class="library-card${deckClass}" data-id="${c.id}" data-type="${c.supertype}" onclick="addCardToBuilder('${c.id}')" onmouseenter="highlightDeckItem('${c.id}', '${c.supertype}')" onmouseleave="unhighlightDeckItem('${c.id}')">
       <img src="${imgUrl}" loading="lazy" onerror="this.style.background='var(--card)';this.style.minHeight='100px';this.removeAttribute('src')">
+      ${inDeck ? `<div class="deck-count-badge" style="background:${badgeColor}">${inDeck}</div>` : ''}
     </div>`;
     count++;
   }
@@ -1387,6 +1398,31 @@ function renderLibrary() {
   else countStr = `${allCards.length} Cards Available`;
   
   document.getElementById('libraryCount').innerText = countStr;
+}
+
+function updateLibraryCard(id) {
+  const grid = document.getElementById('libraryGrid');
+  const card = grid.querySelector(`.library-card[data-id="${id}"]`);
+  if (!card) return;
+  const count = customDeckCounts[id] || 0;
+  const type = card.dataset.type;
+  const glowClass = `in-deck-${type === 'Pokémon' ? 'pokemon' : type === 'Trainer' ? 'trainer' : 'energy'}`;
+  const badgeColor = type === 'Pokémon' ? 'var(--accent)' : type === 'Trainer' ? 'var(--yellow)' : 'var(--green)';
+  card.classList.remove('in-deck-pokemon', 'in-deck-trainer', 'in-deck-energy');
+  if (count > 0) {
+    card.classList.add(glowClass);
+    let badge = card.querySelector('.deck-count-badge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'deck-count-badge';
+      badge.style.background = badgeColor;
+      card.appendChild(badge);
+    }
+    badge.textContent = count;
+  } else {
+    const badge = card.querySelector('.deck-count-badge');
+    if (badge) badge.remove();
+  }
 }
 
 function addCardToBuilder(id) {
@@ -1404,6 +1440,7 @@ function addCardToBuilder(id) {
   
   customDeckCounts[id] = currentCount + 1;
   totalCardsInDeck++;
+  updateLibraryCard(id);
   renderCustomDeck();
 }
 
@@ -1412,6 +1449,7 @@ function subCardFromBuilder(id) {
   customDeckCounts[id]--;
   if (customDeckCounts[id] === 0) delete customDeckCounts[id];
   totalCardsInDeck--;
+  updateLibraryCard(id);
   renderCustomDeck();
 }
 
@@ -1440,6 +1478,7 @@ function clearBuilderDeck() {
     totalCardsInDeck = 0;
     document.getElementById('builderDeckName').value = '';
     renderCustomDeck();
+    renderLibrary();
   }
 }
 
@@ -1476,7 +1515,7 @@ function renderCustomDeck() {
   
   let html = '';
   deckArr.forEach(c => {
-    html += `<div class="builder-item">
+    html += `<div class="builder-item" data-deck-id="${c.id}">
       <div style="width: 20px; text-align:center; color:${c.supertype==='Pokémon'?'var(--accent)':c.supertype==='Trainer'?'var(--yellow)':'var(--green)'};" title="${c.supertype}">●</div>
       <div class="b-name" onclick="zoomCard(event, '${cardImgUrl(c)}', this)">${c.name}</div>
       <div class="b-ctrl">
@@ -1487,6 +1526,20 @@ function renderCustomDeck() {
     </div>`;
   });
   list.innerHTML = html;
+}
+
+function highlightDeckItem(id, supertype) {
+  const item = document.querySelector(`.builder-item[data-deck-id="${id}"]`);
+  if (!item) return;
+  const cls = `highlight-${supertype === 'Pokémon' ? 'pokemon' : supertype === 'Trainer' ? 'trainer' : 'energy'}`;
+  item.classList.add(cls);
+  item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function unhighlightDeckItem(id) {
+  const item = document.querySelector(`.builder-item[data-deck-id="${id}"]`);
+  if (!item) return;
+  item.classList.remove('highlight-pokemon', 'highlight-trainer', 'highlight-energy');
 }
 
 async function saveCustomDeck() {
