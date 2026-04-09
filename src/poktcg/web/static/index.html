@@ -328,7 +328,10 @@
         <div class="library-grid" id="libraryGrid"><div style="color:var(--muted)">Loading library...</div></div>
       </div>
       <div class="builder-panel" style="display:flex; flex-direction:column;">
-        <h2 style="margin-top:0">Your Deck</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 style="margin-top:0">Your Deck</h2>
+          <button id="clearDeckBtn" onclick="clearBuilderDeck()" disabled style="background:none; border:1px solid var(--red); color:var(--red); padding:4px 12px; border-radius:6px; font-size:0.75em; cursor:pointer; opacity:0.8; transition:opacity 0.2s;" onmouseover="if(!this.disabled){this.style.opacity='1';this.style.background='var(--red)';this.style.color='#fff'}" onmouseout="if(!this.disabled){this.style.opacity='0.8';this.style.background='none';this.style.color='var(--red)'}">Clear Deck</button>
+        </div>
         <div style="font-size: 0.8em; color:var(--muted); margin-bottom:8px;" id="builderCounts">0 / 60 Cards</div>
         <div class="builder-deck-list" id="builderDeckList"></div>
         
@@ -1412,9 +1415,46 @@ function subCardFromBuilder(id) {
   renderCustomDeck();
 }
 
+let clearDeckPending = false;
+let clearDeckTimeout = null;
+
+function clearBuilderDeck() {
+  const btn = document.getElementById('clearDeckBtn');
+  if (!clearDeckPending) {
+    clearDeckPending = true;
+    btn.textContent = 'Confirm?';
+    btn.style.background = 'var(--red)';
+    btn.style.color = '#fff';
+    btn.style.opacity = '1';
+    clearDeckTimeout = setTimeout(() => {
+      clearDeckPending = false;
+      btn.textContent = 'Clear Deck';
+      btn.style.background = 'none';
+      btn.style.color = 'var(--red)';
+      btn.style.opacity = '0.8';
+    }, 2000);
+  } else {
+    clearTimeout(clearDeckTimeout);
+    clearDeckPending = false;
+    customDeckCounts = {};
+    totalCardsInDeck = 0;
+    document.getElementById('builderDeckName').value = '';
+    renderCustomDeck();
+  }
+}
+
 function renderCustomDeck() {
   const list = document.getElementById('builderDeckList');
   const countsEl = document.getElementById('builderCounts');
+  const clearBtn = document.getElementById('clearDeckBtn');
+  if (clearBtn) {
+    clearBtn.disabled = totalCardsInDeck === 0;
+    clearBtn.style.opacity = totalCardsInDeck === 0 ? '0.3' : '0.8';
+    clearBtn.style.cursor = totalCardsInDeck === 0 ? 'default' : 'pointer';
+    clearBtn.style.background = 'none';
+    clearBtn.style.color = 'var(--red)';
+    clearBtn.textContent = 'Clear Deck';
+  }
   
   let pCount=0, tCount=0, eCount=0;
   
