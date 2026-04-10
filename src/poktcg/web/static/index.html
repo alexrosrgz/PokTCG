@@ -144,7 +144,7 @@
   .search-input { width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid #333; background: var(--bg); color: #fff; margin-bottom: 16px; font-size: 1em; outline: none; }
   .search-input:focus { border-color: var(--accent); }
   .builder-deck-list { max-height: 55vh; overflow-y: auto; margin-bottom: 16px;}
-  .builder-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); align-items:center; transition: background 0.2s ease; border-radius: 4px; padding: 6px 8px; }
+  .builder-item { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05); align-items:center; transition: background 0.2s ease; border-radius: 4px; padding: 6px 8px; gap: 8px; }
   .builder-item.highlight-pokemon { background: rgba(233, 69, 96, 0.15); }
   .builder-item.highlight-trainer { background: rgba(240, 201, 41, 0.15); }
   .builder-item.highlight-energy { background: rgba(78, 204, 163, 0.15); }
@@ -1517,7 +1517,8 @@ function renderCustomDeck() {
   deckArr.forEach(c => {
     html += `<div class="builder-item" data-deck-id="${c.id}">
       <div style="width: 20px; text-align:center; color:${c.supertype==='Pokémon'?'var(--accent)':c.supertype==='Trainer'?'var(--yellow)':'var(--green)'};" title="${c.supertype}">●</div>
-      <div class="b-name" onclick="zoomCard(event, '${cardImgUrl(c)}', this)">${c.name}</div>
+      <img src="${cardImgUrl(c)}" alt="${c.name}" style="width:32px; height:44px; object-fit:cover; border-radius:3px; cursor:zoom-in; flex-shrink:0;" onclick="zoomCard(event, '${cardImgUrl(c)}', this)" onerror="this.style.background='var(--card)';this.removeAttribute('src')">
+      <div class="b-name">${c.name}</div>
       <div class="b-ctrl">
         <button onclick="subCardFromBuilder('${c.id}')">-</button>
         <span class="b-count">${c.count}</span>
