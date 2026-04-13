@@ -124,27 +124,6 @@ def _load_valid_saved_decks(names: list[str], saved_decks_data: dict) -> list[tu
     return loaded
 
 
-def _build_matchup_label(pairing: dict) -> str:
-    return f"{pairing['deck_a']} vs {pairing['deck_b']}"
-
-
-def _format_matchup_highlight(pairing: dict | None, kind: str) -> dict | None:
-    if not pairing:
-        return None
-
-    gap_pct = abs(pairing["win_rate_a"] - 0.5) * 100
-    if kind == "closest":
-        detail = f"{gap_pct:.1f} pt gap"
-    elif kind == "lopsided":
-        detail = f"{gap_pct:.1f} pt gap"
-    else:
-        detail = f"{pairing['avg_turns']:.1f} turns avg"
-
-    return {
-        "label": _build_matchup_label(pairing),
-        "detail": detail,
-    }
-
 
 def _serialize_battle_matrix(participants: list[str], pairings: list[dict]) -> dict:
     lookup: dict[tuple[str, str], float] = {}
@@ -237,14 +216,13 @@ def run_battleground(
     )
 
     standings_map = {
-        name: {"name": name, "wins": 0, "losses": 0, "games": 0, "total_turns": 0}
+        name: {"name": name, "wins": 0, "losses": 0, "games": 0}
         for name in participants
     }
     pairings = []
     aggregate_win_conditions: dict[str, int] = {}
     sim = Simulator(num_workers=num_workers)
 
-    started_at = time.time()
     for matchup_index, (deck_a_name, deck_a, deck_b_name, deck_b) in enumerate(matchups, start=1):
         result = sim.evaluate_matchup(
             deck_a,
@@ -260,20 +238,16 @@ def run_battleground(
             "wins_b": result.losses,
             "games": result.total,
             "win_rate_a": round(result.win_rate, 4),
-            "avg_turns": round(result.avg_turns, 2),
-            "win_conditions": dict(result.reason_counts or {}),
         }
         pairings.append(pairing)
 
         standings_map[deck_a_name]["wins"] += result.wins
         standings_map[deck_a_name]["losses"] += result.losses
         standings_map[deck_a_name]["games"] += result.total
-        standings_map[deck_a_name]["total_turns"] += result.total_turns
 
         standings_map[deck_b_name]["wins"] += result.losses
         standings_map[deck_b_name]["losses"] += result.wins
         standings_map[deck_b_name]["games"] += result.total
-        standings_map[deck_b_name]["total_turns"] += result.total_turns
 
         for reason, count in (result.reason_counts or {}).items():
             aggregate_win_conditions[reason] = aggregate_win_conditions.get(reason, 0) + count
@@ -298,8 +272,6 @@ def run_battleground(
             },
         )
 
-    total_time_sec = time.time() - started_at
-
     standings = []
     for entry in standings_map.values():
         games_played = max(1, entry["games"])
@@ -308,34 +280,13 @@ def run_battleground(
                 "name": entry["name"],
                 "wins": entry["wins"],
                 "losses": entry["losses"],
-                "games": entry["games"],
                 "win_rate": round(entry["wins"] / games_played, 4),
-                "avg_turns": round(entry["total_turns"] / games_played, 2),
             }
         )
 
     standings.sort(key=lambda row: (-row["win_rate"], -row["wins"], row["name"]))
     for rank, row in enumerate(standings, start=1):
         row["rank"] = rank
-
-    closest_pairing = min(pairings, key=lambda row: abs(row["win_rate_a"] - 0.5), default=None)
-    lopsided_pairing = max(pairings, key=lambda row: abs(row["win_rate_a"] - 0.5), default=None)
-    longest_pairing = max(pairings, key=lambda row: row["avg_turns"], default=None)
-
-    insights = {
-        "best_performing_deck": standings[0]["name"] if standings else "",
-        "weakest_deck": standings[-1]["name"] if standings else "",
-        "total_decks": len(participants),
-        "total_matchups": total_matchups,
-        "total_games": total_games,
-        "total_time_sec": round(total_time_sec, 1),
-        "games_per_sec": round(total_games / max(0.01, total_time_sec), 1),
-        "avg_turns_per_game": round(sim.total_turns_played / max(1, total_games), 1),
-        "closest_matchup": _format_matchup_highlight(closest_pairing, "closest"),
-        "most_lopsided_matchup": _format_matchup_highlight(lopsided_pairing, "lopsided"),
-        "longest_matchup": _format_matchup_highlight(longest_pairing, "longest"),
-        "win_conditions": aggregate_win_conditions,
-    }
 
     matrix = _serialize_battle_matrix(participants, pairings) if mode == "all_vs_all" else None
 
@@ -346,7 +297,7 @@ def run_battleground(
         "standings": standings,
         "pairings": pairings,
         "matrix": matrix,
-        "insights": insights,
+        "win_conditions": aggregate_win_conditions,
     }
 
 

@@ -163,10 +163,6 @@
   .deck-selector-item + .deck-selector-item { border-top: 1px solid rgba(255,255,255,0.05); }
   .deck-selector-item input { accent-color: var(--accent); }
   .empty-state { background: rgba(0,0,0,0.18); border: 1px dashed rgba(255,255,255,0.12); border-radius: 8px; padding: 16px; color: var(--muted); }
-  .battle-highlights { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
-  .battle-highlight { background: var(--card); padding: 10px 14px; border-radius: 8px; min-width: 180px; }
-  .battle-highlight .label { display: block; font-size: 0.72em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-  .battle-highlight .value { display: block; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -416,16 +412,10 @@
 
     <div class="results-area" id="battleResultsArea">
       <div class="results-grid">
-        <div class="insights-panel full-width">
-          <h2>Battle Summary</h2>
-          <div class="insights-grid" id="battleInsightsGrid"></div>
-          <div class="battle-highlights" id="battleHighlights"></div>
-          <div class="win-conditions" id="battleWinConditions"></div>
-        </div>
-
         <div class="matchup-panel full-width">
           <h2>Standings</h2>
           <div id="battleStandingsTable"></div>
+          <div class="win-conditions" id="battleWinConditions" style="margin-top:16px;"></div>
         </div>
 
         <div class="matchup-panel full-width" id="battleMatrixPanel" style="display:none;">
@@ -433,7 +423,7 @@
           <div id="battleMatrixTable"></div>
         </div>
 
-        <div class="matchup-panel full-width">
+        <div class="matchup-panel full-width" id="battlePairingsPanel" style="display:none;">
           <h2>Matchup Results</h2>
           <div id="battlePairingsTable"></div>
         </div>
@@ -1058,53 +1048,6 @@ function handleBattlegroundEvent(type, data) {
   }
 }
 
-function formatBattleTime(totalSeconds) {
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = Math.round(totalSeconds % 60);
-  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-}
-
-function renderBattleInsights(insights) {
-  const grid = document.getElementById('battleInsightsGrid');
-  const highlights = document.getElementById('battleHighlights');
-  if (!insights) {
-    grid.innerHTML = '';
-    highlights.innerHTML = '';
-    renderWinConditions('battleWinConditions', {});
-    return;
-  }
-
-  const stats = [
-    { value: insights.best_performing_deck || '-', label: 'Best Deck' },
-    { value: insights.weakest_deck || '-', label: 'Weakest Deck' },
-    { value: insights.total_decks, label: 'Decks Entered' },
-    { value: insights.total_matchups, label: 'Matchups Played' },
-    { value: insights.total_games, label: 'Games Played' },
-    { value: formatBattleTime(insights.total_time_sec || 0), label: 'Total Time' },
-    { value: insights.games_per_sec, label: 'Games / Second' },
-    { value: insights.avg_turns_per_game, label: 'Avg Turns / Game' },
-  ];
-  grid.innerHTML = stats.map(stat =>
-    `<div class="insight-stat"><div class="stat-value">${stat.value}</div><div class="stat-label">${stat.label}</div></div>`
-  ).join('');
-
-  const highlightItems = [
-    { label: 'Closest Matchup', value: insights.closest_matchup },
-    { label: 'Most Lopsided', value: insights.most_lopsided_matchup },
-    { label: 'Longest Matchup', value: insights.longest_matchup },
-  ].filter(item => item.value && item.value.label);
-
-  highlights.innerHTML = highlightItems.map(item => `
-    <div class="battle-highlight">
-      <span class="label">${item.label}</span>
-      <span class="value">${item.value.label}</span>
-      <span style="color:var(--muted); font-size:0.85em;">${item.value.detail}</span>
-    </div>
-  `).join('');
-
-  renderWinConditions('battleWinConditions', insights.win_conditions || {});
-}
-
 function renderBattleStandings(standings) {
   const el = document.getElementById('battleStandingsTable');
   if (!standings || !standings.length) {
@@ -1112,27 +1055,18 @@ function renderBattleStandings(standings) {
     return;
   }
 
-  let html = '<table class="matchup"><tr><th>Rank</th><th>Deck</th><th>Win Rate</th><th>Wins</th><th>Losses</th><th>Games</th><th>Avg Turns</th></tr>';
+  let html = '<table class="matchup"><tr><th>Rank</th><th style="text-align:left">Deck</th><th>Win Rate</th><th>Record</th></tr>';
   standings.forEach(row => {
     const color = row.win_rate > 0.55 ? 'var(--green)' : row.win_rate < 0.45 ? 'var(--red)' : 'var(--yellow)';
     html += `<tr>
       <td>${row.rank}</td>
       <td style="text-align:left">${row.name}</td>
       <td style="color:${color}">${(row.win_rate * 100).toFixed(1)}%</td>
-      <td>${row.wins}</td>
-      <td>${row.losses}</td>
-      <td>${row.games}</td>
-      <td>${row.avg_turns.toFixed(1)}</td>
+      <td>${row.wins}-${row.losses}</td>
     </tr>`;
   });
   html += '</table>';
   el.innerHTML = html;
-}
-
-function summarizeBattleConditions(winConditions) {
-  const entries = Object.entries(winConditions || {}).sort((a, b) => b[1] - a[1]);
-  if (!entries.length) return '-';
-  return entries.slice(0, 2).map(([reason, count]) => `${reason} (${count})`).join(', ');
 }
 
 function renderBattlePairings(pairings) {
@@ -1142,15 +1076,11 @@ function renderBattlePairings(pairings) {
     return;
   }
 
-  let html = '<table class="matchup"><tr><th>Matchup</th><th>Record</th><th>Deck A Win Rate</th><th>Avg Turns</th><th>Win Conditions</th></tr>';
+  let html = '<table class="matchup"><tr><th>Matchup</th><th>Record</th></tr>';
   pairings.forEach(pairing => {
-    const color = pairing.win_rate_a > 0.55 ? 'var(--green)' : pairing.win_rate_a < 0.45 ? 'var(--red)' : 'var(--yellow)';
     html += `<tr>
       <td style="text-align:left">${pairing.deck_a} vs ${pairing.deck_b}</td>
       <td>${pairing.wins_a}-${pairing.wins_b}</td>
-      <td style="color:${color}">${(pairing.win_rate_a * 100).toFixed(1)}%</td>
-      <td>${pairing.avg_turns.toFixed(1)}</td>
-      <td style="text-align:left">${summarizeBattleConditions(pairing.win_conditions)}</td>
     </tr>`;
   });
   html += '</table>';
@@ -1166,7 +1096,7 @@ function renderBattleMatrix(matrix) {
     return;
   }
 
-  let html = '<table class="matchup"><tr><th>Deck</th>';
+  let html = '<table class="matchup"><tr><th style="text-align:left">Deck</th>';
   matrix.headers.forEach(name => { html += `<th>${name}</th>`; });
   html += '</tr>';
 
@@ -1190,10 +1120,13 @@ function renderBattleMatrix(matrix) {
 function showBattlegroundResults(data) {
   const resultsArea = document.getElementById('battleResultsArea');
   resultsArea.classList.add('visible');
-  renderBattleInsights(data.insights);
   renderBattleStandings(data.standings);
-  renderBattlePairings(data.pairings);
+  renderWinConditions('battleWinConditions', data.win_conditions || {});
+
+  const isAllVsAll = data.mode === 'all_vs_all';
   renderBattleMatrix(data.matrix);
+  document.getElementById('battlePairingsPanel').style.display = isAllVsAll ? 'none' : 'block';
+  if (!isAllVsAll) renderBattlePairings(data.pairings);
 }
 
 // Saved Decks Logic

@@ -137,14 +137,10 @@ def test_run_battleground_all_vs_all_aggregates_results(monkeypatch):
     assert result["participants"] == ["Alpha", "Beta", "Gamma"]
     assert len(result["pairings"]) == 3
     assert all(pairing["games"] == 3 for pairing in result["pairings"])
-    assert result["insights"]["total_games"] == 9
-    assert result["insights"]["total_matchups"] == 3
     assert result["matrix"] is not None
     assert len(result["matrix"]["rows"]) == 3
-    assert sum(row["games"] for row in result["standings"]) == 18
     assert result["standings"][0]["rank"] == 1
-    assert result["insights"]["best_performing_deck"] == result["standings"][0]["name"]
-    assert result["insights"]["weakest_deck"] == result["standings"][-1]["name"]
+    assert result["win_conditions"]
 
 
 def test_run_battleground_one_vs_all_aggregates_results(monkeypatch):
@@ -168,13 +164,12 @@ def test_run_battleground_one_vs_all_aggregates_results(monkeypatch):
 
     assert result["participants"] == ["Alpha", "Beta", "Gamma"]
     assert len(result["pairings"]) == 2
-    assert result["insights"]["total_games"] == 4
     assert result["matrix"] is None
 
     alpha_row = next(row for row in result["standings"] if row["name"] == "Alpha")
     beta_row = next(row for row in result["standings"] if row["name"] == "Beta")
     gamma_row = next(row for row in result["standings"] if row["name"] == "Gamma")
 
-    assert alpha_row["games"] == 4
-    assert beta_row["games"] == 2
-    assert gamma_row["games"] == 2
+    assert alpha_row["wins"] + alpha_row["losses"] == 4
+    assert beta_row["wins"] + beta_row["losses"] == 2
+    assert gamma_row["wins"] + gamma_row["losses"] == 2
