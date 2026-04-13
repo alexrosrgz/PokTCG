@@ -67,6 +67,8 @@ class Game:
         deck0: list[str],
         deck1: list[str],
         seed: int | None = None,
+        enable_logging: bool = False,
+        deck_names: tuple[str, str] | None = None,
     ):
         self.players = [player0, player1]
         self.rng = GameRNG(seed)
@@ -78,6 +80,34 @@ class Game:
             ],
             phase=Phase.SETUP,
         )
+        self.enable_logging = enable_logging
+        self.deck_names = deck_names or ("Player 0", "Player 1")
+        self.game_log: list[dict] = []
+
+    def _log(self, text: str, turn: int | None = None, player: int | None = None):
+        """Append a log entry if logging is enabled."""
+        if not self.enable_logging:
+            return
+        self.game_log.append({
+            "turn": turn if turn is not None else self.state.turn,
+            "player": player,
+            "text": text,
+        })
+
+    def _card_name(self, card_id: str) -> str:
+        return self.db.get(card_id).name
+
+    def _slot_label(self, player_idx: int, slot_idx: int) -> str:
+        """Human label like 'active Hitmonchan' or 'benched Squirtle'."""
+        p = self.state.players[player_idx]
+        slot = self._get_slot(p, slot_idx)
+        if slot is None:
+            return "unknown"
+        name = self._card_name(slot.card_id)
+        return f"active {name}" if slot_idx == 0 else f"benched {name}"
+
+    def _pname(self, idx: int) -> str:
+        return self.deck_names[idx]
 
     def play(self) -> GameResult:
         """Play a complete game, return result."""
@@ -88,6 +118,7 @@ class Game:
                 self.state.phase = Phase.FINISHED
                 self.state.winner = 0  # Arbitrary tie-breaker
                 self.state.game_over_reason = "max turns reached"
+                self._log("Game ended — max turns reached")
                 break
             self._play_turn()
         return GameResult(
@@ -108,14 +139,24 @@ class Game:
         # Handle mulligans
         for i in range(2):
             while not self._has_basic_in_hand(i):
+                self._log(f"{self._pname(i)} mulligans — no Basic Pokemon in hand", turn=0, player=i)
                 mulligan_count = self._mulligan(i)
                 # Opponent draws 2 cards per mulligan (1999 rule)
                 opp = 1 - i
                 self.state.players[opp].draw_cards(2)
+                self._log(f"{self._pname(opp)} draws 2 cards (mulligan penalty)", turn=0, player=opp)
 
         # Each player places active and bench
         for i in range(2):
             self._place_initial_pokemon(i)
+            p = self.state.players[i]
+            if p.active:
+                active_name = self._card_name(p.active.card_id)
+                bench_names = [self._card_name(s.card_id) for s in p.bench]
+                if bench_names:
+                    self._log(f"{self._pname(i)} placed {active_name} active, benched {', '.join(bench_names)}", turn=0, player=i)
+                else:
+                    self._log(f"{self._pname(i)} placed {active_name} active", turn=0, player=i)
 
         # Set 6 prizes each
         for i in range(2):
@@ -132,6 +173,7 @@ class Game:
 
         self.state.turn = 1
         self.state.phase = Phase.PLAYER_TURN
+        self._log(f"{self._pname(self.state.active_player)} goes first", turn=0)
 
     def _draw_initial_hand(self, player_idx: int):
         p = self.state.players[player_idx]
@@ -211,8 +253,10 @@ class Game:
         card = p.draw_card()
         if card is None:
             # Deck out!
+            self._log(f"{self._pname(player_idx)} cannot draw — deck out!", player=player_idx)
             self._end_game(1 - player_idx, "deck out")
             return
+        self._log(f"{self._pname(player_idx)} drew {self._card_name(card)}", player=player_idx)
 
         # 2. Action loop
         turn_ended = False
@@ -258,14 +302,19 @@ class Game:
                     pokemon_stack=[card_id],
                     turn_played=self.state.turn,
                 ))
+                self._log(f"{self._pname(player_idx)} played {self._card_name(card_id)} to bench", player=player_idx)
 
         elif action.type == ActionType.EVOLVE:
             idx = p.hand.index(action.card_id)
             card_id = p.hand.pop(idx)
             slot = self._get_slot(p, action.target_slot)
             if slot:
+                prev_name = self._card_name(slot.card_id)
                 slot.pokemon_stack.append(card_id)
                 slot.turn_evolved = self.state.turn
+                new_name = self._card_name(card_id)
+                where = "active" if action.target_slot == 0 else "bench"
+                self._log(f"{self._pname(player_idx)} evolved {prev_name} into {new_name} ({where})", player=player_idx)
                 # Evolution removes special conditions
                 slot.conditions.clear()
 
@@ -277,6 +326,8 @@ class Game:
                 if slot:
                     slot.attached_energy.append(card_id)
                     p.energy_attached_this_turn = True
+                    target = self._slot_label(player_idx, action.target_slot)
+                    self._log(f"{self._pname(player_idx)} attached {self._card_name(card_id)} to {target}", player=player_idx)
 
         elif action.type == ActionType.PLAY_TRAINER:
             self._play_trainer(player_idx, action)
@@ -291,6 +342,9 @@ class Game:
         """Execute a Pokemon Power."""
         p = self.state.players[player_idx]
         card = self.db.get(action.card_id)
+
+        power_name = card.abilities[0].name if card.abilities else "Power"
+        self._log(f"{self._pname(player_idx)} used {card.name}'s {power_name}", player=player_idx)
 
         # Find hooks by card ID or name
         hooks = get_power_hooks(action.card_id)
@@ -325,6 +379,7 @@ class Game:
         # Check confusion
         if SpecialCondition.CONFUSED in p.active.conditions:
             if not self.rng.coin_flip():
+                self._log(f"{self._pname(player_idx)}'s {self._card_name(p.active.card_id)} is confused — retreat failed (coin flip tails)", player=player_idx)
                 return  # Retreat fails, energy NOT discarded (1999 rule varies)
 
         # Discard energy for retreat cost
@@ -339,11 +394,14 @@ class Game:
         # Swap active with bench
         bench_idx = action.new_active
         if 0 <= bench_idx < len(p.bench):
+            old_name = self._card_name(p.active.card_id)
+            new_name = self._card_name(p.bench[bench_idx].card_id)
             old_active = p.active
             # Clear conditions on retreat
             old_active.conditions.clear()
             p.active = p.bench[bench_idx]
             p.bench[bench_idx] = old_active
+            self._log(f"{self._pname(player_idx)} retreated {old_name}, sent in {new_name}", player=player_idx)
 
     def _execute_attack(self, player_idx: int, action: Action):
         """Execute an attack."""
@@ -358,6 +416,9 @@ class Game:
         defender = opp.active
         attack_card = self.db.get(attacker.card_id)
         attack = attack_card.attacks[action.attack_index]
+
+        attacker_name = self._card_name(attacker.card_id)
+        defender_name = self._card_name(defender.card_id)
 
         # Handle confusion
         if SpecialCondition.CONFUSED in attacker.conditions:
@@ -376,8 +437,12 @@ class Game:
                         break
                 self_damage = max(0, self_damage)
                 attacker.damage += self_damage
+                attacker_hp = self.db.get(attacker.card_id).hp
+                self._log(f"{self._pname(player_idx)}'s {attacker_name} is confused — hit itself for {self_damage} damage ({attacker.damage}/{attacker_hp} HP)", player=player_idx)
                 self._check_ko(player_idx, 0)  # Check if confused self-KO
                 return
+
+        self._log(f"{self._pname(player_idx)}'s {attacker_name} used {attack.name} on {self._pname(opp_idx)}'s {defender_name}", player=player_idx)
 
         # Calculate and apply damage
         base_damage = attack.base_damage
@@ -397,9 +462,16 @@ class Game:
 
             if final_damage > 0:
                 defender.damage += final_damage
+                defender_hp = self.db.get(defender.card_id).hp
+                self._log(f"  {self._pname(opp_idx)}'s {defender_name} took {final_damage} damage ({defender.damage}/{defender_hp} HP)", player=opp_idx)
 
                 # Reactive powers (Machamp Strikes Back)
                 self._trigger_on_damaged(opp_idx, 0, final_damage, player_idx)
+            else:
+                self._log(f"  No damage dealt", player=player_idx)
+        else:
+            if not attack.has_effect:
+                self._log(f"  No damage dealt", player=player_idx)
 
         # Check KOs everywhere (attacks can damage self, bench, etc.)
         self._check_all_kos()
@@ -433,6 +505,8 @@ class Game:
         card = self.db.get(action.card_id)
         effect_fn = get_trainer_effect(action.card_id, card.name)
 
+        self._log(f"{self._pname(player_idx)} played {card.name}", player=player_idx)
+
         # Remove from hand and put in discard
         idx = p.hand.index(action.card_id)
         card_id = p.hand.pop(idx)
@@ -440,7 +514,9 @@ class Game:
 
         # Execute effect
         if effect_fn:
-            effect_fn(self, player_idx)
+            success = effect_fn(self, player_idx)
+            if not success:
+                self._log(f"  No effect", player=player_idx)
 
         # Check for KOs from trainer effects (e.g., bench damage)
         self._check_all_kos()
@@ -478,6 +554,7 @@ class Game:
         card = self.db.get(slot.card_id)
         if slot.damage >= card.hp:
             # KO! Discard all cards
+            self._log(f"{self._pname(player_idx)}'s {card.name} was knocked out!", player=player_idx)
             for cid in slot.pokemon_stack:
                 p.discard.append(cid)
             for cid in slot.attached_energy:
@@ -494,6 +571,8 @@ class Game:
             if opp.prizes:
                 prize_card = opp.prizes.pop(0)
                 opp.hand.append(prize_card)
+                remaining = len(opp.prizes)
+                self._log(f"{self._pname(opp_idx)} took a prize card ({remaining} remaining)", player=opp_idx)
 
                 # Check win: all prizes taken
                 if not opp.prizes:
@@ -512,18 +591,23 @@ class Game:
                 bench_idx = player.choose_new_active(self.state, player_idx)
                 if bench_idx < 0 or bench_idx >= len(p.bench):
                     bench_idx = 0
+                new_active_name = self._card_name(p.bench[bench_idx].card_id)
                 p.active = p.bench.pop(bench_idx)
+                self._log(f"{self._pname(player_idx)} promoted {new_active_name} to active", player=player_idx)
 
     def _between_turns(self, player_idx: int):
         """Between-turns phase: special conditions, cleanup."""
         p = self.state.players[player_idx]
 
         if p.active:
+            active_name = self._card_name(p.active.card_id)
             conditions_to_remove = set()
 
             # Poison: 10 damage between turns
             if SpecialCondition.POISONED in p.active.conditions:
                 p.active.damage += 10
+                active_hp = self.db.get(p.active.card_id).hp
+                self._log(f"{self._pname(player_idx)}'s {active_name} took 10 poison damage ({p.active.damage}/{active_hp} HP)", player=player_idx)
                 self._check_ko(player_idx, 0)
                 if self.state.is_finished:
                     return
@@ -532,10 +616,14 @@ class Game:
             if SpecialCondition.ASLEEP in p.active.conditions:
                 if self.rng.coin_flip():
                     conditions_to_remove.add(SpecialCondition.ASLEEP)
+                    self._log(f"{self._pname(player_idx)}'s {active_name} woke up", player=player_idx)
+                else:
+                    self._log(f"{self._pname(player_idx)}'s {active_name} is still asleep", player=player_idx)
 
             # Paralysis: remove after the turn
             if SpecialCondition.PARALYZED in p.active.conditions:
                 conditions_to_remove.add(SpecialCondition.PARALYZED)
+                self._log(f"{self._pname(player_idx)}'s {active_name} is no longer paralyzed", player=player_idx)
 
             p.active.conditions -= conditions_to_remove
 
@@ -553,6 +641,7 @@ class Game:
         self.state.phase = Phase.FINISHED
         self.state.winner = winner
         self.state.game_over_reason = reason
+        self._log(f"{self._pname(winner)} wins — {reason}!", player=winner)
 
     def _apply_passive_powers(self, defender_player_idx: int, slot_idx: int,
                                damage: int, attacker_player_idx: int) -> int:

@@ -93,17 +93,32 @@ class HeuristicAI(BasePlayer):
             if retreat:
                 return retreat
 
+        # ---- TACTIC 9.5: Play PlusPower right before attacking ----
+        if ActionType.PLAY_TRAINER in by_type and ActionType.ATTACK in by_type:
+            for a in by_type[ActionType.PLAY_TRAINER]:
+                if db.get(a.card_id).name == "PlusPower" and p.active:
+                    active_card = db.get(p.active.card_id)
+                    remaining_hp = active_card.hp - p.active.damage
+                    can_attack = any(
+                        _can_pay_energy(p.active, atk.cost, db)
+                        for atk in active_card.attacks
+                    )
+                    # Only play if we can attack and aren't about to die
+                    if can_attack and remaining_hp > 20:
+                        return a
+
         # ---- TACTIC 10: Attack (pick best with lookahead) ----
         if ActionType.ATTACK in by_type:
             best_attack = self._choose_attack(state, by_type[ActionType.ATTACK])
             if best_attack:
                 return best_attack
 
-        # ---- TACTIC 11: Play any remaining trainers ----
+        # ---- TACTIC 11: Play safe remaining trainers (draw only) ----
         if ActionType.PLAY_TRAINER in by_type:
             for a in by_type[ActionType.PLAY_TRAINER]:
                 name = db.get(a.card_id).name
-                if name != "Professor Oak":  # Don't Prof Oak with big hand
+                # Only play trainers that are always safe as a fallback
+                if name in ("Bill", "Energy Search", "Pokédex"):
                     return a
 
         # ---- TACTIC 12: Attack even with low value ----
@@ -160,10 +175,10 @@ class HeuristicAI(BasePlayer):
                 if total_energy > 2 and opp.active and opp.active.attached_energy:
                     return a
 
-            # Gust of Wind: always play if opponent has bench — targets are
-            # evaluated by the trainer effect itself, we just decide to play it
+            # Gust of Wind: only play if pulling a bench target is actually worthwhile
             if name == "Gust of Wind" and opp.bench:
-                return a
+                if self._evaluate_gust_targets(state) is not None:
+                    return a
 
             # Lass: play when opponent has big hand
             if name == "Lass" and len(opp.hand) >= 5:
@@ -213,21 +228,35 @@ class HeuristicAI(BasePlayer):
         for a in trainer_actions:
             name = db.get(a.card_id).name
 
-            # PlusPower: always play — free +10 damage (or +20 with weakness)
-            if name == "PlusPower":
-                return a
-
-            # Switch: use if active has bad status or is stuck
+            # Switch: use if active has bad status, or can't attack but bench can
             if name == "Switch" and p.active and p.bench:
                 if p.active.conditions & {SpecialCondition.ASLEEP, SpecialCondition.CONFUSED, SpecialCondition.PARALYZED}:
                     return a
+                active_card = db.get(p.active.card_id)
+                active_can_attack = any(
+                    _can_pay_energy(p.active, atk.cost, db)
+                    for atk in active_card.attacks
+                )
+                if not active_can_attack:
+                    bench_can_attack = any(
+                        any(_can_pay_energy(s, atk.cost, db) for atk in db.get(s.card_id).attacks)
+                        for s in p.bench
+                    )
+                    if bench_can_attack:
+                        return a
 
             if name == "Full Heal" and p.active and p.active.conditions:
                 return a
 
-            # Defender: use if active is damaged and opponent can attack
-            if name == "Defender" and p.active and p.active.damage > 0:
-                return a
+            # Defender: use if opponent can attack us (reduces incoming damage)
+            if name == "Defender" and p.active and opp.active:
+                opp_card = db.get(opp.active.card_id)
+                opp_can_attack = any(
+                    _can_pay_energy(opp.active, atk.cost, db)
+                    for atk in opp_card.attacks
+                )
+                if opp_can_attack:
+                    return a
 
             # Potion: heal if significant damage
             if name == "Potion" and p.active and p.active.damage >= 20:
@@ -235,19 +264,64 @@ class HeuristicAI(BasePlayer):
 
             # Scoop Up: save a heavily damaged active
             if name == "Scoop Up" and p.active and p.bench:
-                if p.active.damage >= 40:
+                active_card = db.get(p.active.card_id)
+                remaining_hp = active_card.hp - p.active.damage
+                if remaining_hp <= 20:
                     return a
 
+            # Energy Search: only if a Pokemon actually needs energy
             if name == "Energy Search":
-                return a
-            if name == "Energy Retrieval":
-                return a
+                needs_energy = False
+                for slot in p.all_pokemon_slots():
+                    slot_card = db.get(slot.card_id)
+                    for atk in slot_card.attacks:
+                        if not _can_pay_energy(slot, atk.cost, db):
+                            needs_energy = True
+                            break
+                    if needs_energy:
+                        break
+                if needs_energy:
+                    return a
+
+            # Energy Retrieval: only if there's basic energy in discard
+            if name == "Energy Retrieval" and len(p.hand) >= 1:
+                has_energy_in_discard = any(
+                    db.get(cid).is_energy and db.get(cid).is_basic_energy
+                    for cid in p.discard
+                )
+                if has_energy_in_discard:
+                    return a
+
             if name == "Pokémon Trader":
-                return a
+                has_pokemon_in_hand = any(db.get(cid).is_pokemon for cid in p.hand)
+                has_pokemon_in_deck = any(db.get(cid).is_pokemon for cid in p.deck)
+                if has_pokemon_in_hand and has_pokemon_in_deck:
+                    return a
+
+            # Pokémon Breeder: only if we have a Stage 2 in hand + matching Basic in play
             if name == "Pokémon Breeder":
-                return a
+                stage2s = [cid for cid in p.hand if db.get(cid).is_pokemon and db.get(cid).is_stage2]
+                if stage2s:
+                    for s2_id in stage2s:
+                        s2_card = db.get(s2_id)
+                        stage1_name = s2_card.evolves_from
+                        if not stage1_name:
+                            continue
+                        stage1_cards = db.find_by_name(stage1_name)
+                        if not stage1_cards:
+                            continue
+                        basic_name = stage1_cards[0].evolves_from
+                        if not basic_name:
+                            continue
+                        for slot in p.all_pokemon_slots():
+                            top = db.get(slot.card_id)
+                            if top.name == basic_name and top.is_basic and slot.turn_played < state.turn:
+                                return a
+
             if name == "Item Finder" and len(p.hand) >= 3:
-                return a
+                has_trainer_in_discard = any(db.get(cid).is_trainer for cid in p.discard)
+                if has_trainer_in_discard:
+                    return a
 
         return None
 

@@ -363,9 +363,10 @@
             <div class="chip-group">
               <label class="chip"><input type="radio" name="battleMode" value="all_vs_all" checked> <span>All vs All</span></label>
               <label class="chip"><input type="radio" name="battleMode" value="one_vs_all"> <span>One vs All</span></label>
+              <label class="chip"><input type="radio" name="battleMode" value="one_vs_one"> <span>One vs One</span></label>
             </div>
           </div>
-          <div class="form-group" style="flex: 1; min-width: 180px; margin: 0;">
+          <div class="form-group" id="battleRoundsGroup" style="flex: 1; min-width: 180px; margin: 0;">
             <label>Rounds Per Matchup</label>
             <input id="battleRounds" type="number" min="1" value="20" class="search-input" style="margin-bottom:0;">
           </div>
@@ -397,6 +398,19 @@
                 <button type="button" class="mini-btn" onclick="setBattleCheckboxGroup('battleOpponentList', false)">Clear</button>
               </div>
               <div class="deck-selector-list" id="battleOpponentList"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="battleOneVsOneSection" style="display:none;">
+          <div style="display:flex; gap:20px; flex-wrap:wrap;">
+            <div class="form-group" style="flex: 1; min-width: 240px; margin: 0;">
+              <label>Deck A</label>
+              <select id="battleDeckA"></select>
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 240px; margin: 0;">
+              <label>Deck B</label>
+              <select id="battleDeckB"></select>
             </div>
           </div>
         </div>
@@ -435,6 +449,16 @@
           <h2>Matchup Results</h2>
           <div id="battlePairingsTable"></div>
         </div>
+      </div>
+    </div>
+
+    <div class="results-area" id="gameLogArea">
+      <div class="matchup-panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+          <h2 style="margin:0;" id="gameLogTitle">Game Log</h2>
+          <button class="mini-btn" style="background:var(--accent);" onclick="downloadGameLog()">Download Log</button>
+        </div>
+        <div id="gameLogContent" style="font-family:monospace; font-size:0.85em; background:var(--bg); padding:16px; border-radius:8px; max-height:70vh; overflow-y:auto; line-height:1.8;"></div>
       </div>
     </div>
   </div>
@@ -917,6 +941,8 @@ function updateBattlegroundModeUI() {
   const mode = document.querySelector('input[name="battleMode"]:checked')?.value || 'all_vs_all';
   document.getElementById('battleAllVsAllSection').style.display = mode === 'all_vs_all' ? 'block' : 'none';
   document.getElementById('battleOneVsAllSection').style.display = mode === 'one_vs_all' ? 'block' : 'none';
+  document.getElementById('battleOneVsOneSection').style.display = mode === 'one_vs_one' ? 'block' : 'none';
+  document.getElementById('battleRoundsGroup').style.display = mode === 'one_vs_one' ? 'none' : 'block';
 }
 
 function setBattleCheckboxGroup(containerId, checked) {
@@ -950,9 +976,15 @@ function renderBattlegroundSelectors() {
       `).join('')
     : '<div style="color:var(--muted)">No saved decks available.</div>';
 
-  primarySelect.innerHTML = names.length
+  const deckOptions = names.length
     ? names.map(name => `<option value="${name.replace(/"/g, '&quot;')}">${name}</option>`).join('')
     : '<option value="">No saved decks</option>';
+
+  primarySelect.innerHTML = deckOptions;
+  document.getElementById('battleDeckA').innerHTML = deckOptions;
+  document.getElementById('battleDeckB').innerHTML = names.length > 1
+    ? names.map((name, i) => `<option value="${name.replace(/"/g, '&quot;')}" ${i === 1 ? 'selected' : ''}>${name}</option>`).join('')
+    : deckOptions;
 
   renderBattleOpponentList();
   updateBattlegroundModeUI();
@@ -981,8 +1013,10 @@ async function startBattleground() {
 
   const progressArea = document.getElementById('battleProgressArea');
   const resultsArea = document.getElementById('battleResultsArea');
+  const gameLogArea = document.getElementById('gameLogArea');
   progressArea.classList.add('visible');
   resultsArea.classList.remove('visible');
+  gameLogArea.classList.remove('visible');
   document.getElementById('battleProgressBar').style.width = '0%';
   document.getElementById('battleProgressText').textContent = '0%';
   document.getElementById('battleLog').innerHTML = '';
@@ -993,6 +1027,11 @@ async function startBattleground() {
 
   if (mode === 'all_vs_all') {
     payload.deck_names = [...document.querySelectorAll('#battleDeckList input:checked')].map(input => input.value);
+  } else if (mode === 'one_vs_one') {
+    payload.deck_names = [
+      document.getElementById('battleDeckA').value,
+      document.getElementById('battleDeckB').value,
+    ];
   } else {
     payload.primary_deck = document.getElementById('battlePrimaryDeck').value || null;
     payload.opponent_names = [...document.querySelectorAll('#battleOpponentList input:checked')].map(input => input.value);
@@ -1050,7 +1089,11 @@ function handleBattlegroundEvent(type, data) {
     document.getElementById('battleProgressText').textContent = 'Complete!';
     addLog('status', 'Battleground complete!', 'battleLog');
     currentBattlegroundResults = data;
-    showBattlegroundResults(data);
+    if (data.mode === 'one_vs_one') {
+      showGameLog(data);
+    } else {
+      showBattlegroundResults(data);
+    }
   } else if (type === 'error') {
     addLog('status', 'Error: ' + data.message, 'battleLog');
   }
@@ -1135,6 +1178,61 @@ function showBattlegroundResults(data) {
   renderBattleMatrix(data.matrix);
   document.getElementById('battlePairingsPanel').style.display = isAllVsAll ? 'none' : 'block';
   if (!isAllVsAll) renderBattlePairings(data.pairings);
+}
+
+let currentGameLog = null;
+
+function showGameLog(data) {
+  const area = document.getElementById('gameLogArea');
+  const title = document.getElementById('gameLogTitle');
+  const content = document.getElementById('gameLogContent');
+  area.classList.add('visible');
+
+  currentGameLog = data;
+  const winColor = data.winner === data.deck_a ? 'var(--green)' : 'var(--accent)';
+  title.innerHTML = `${data.deck_a} vs ${data.deck_b} — <span style="color:${winColor}">${data.winner} wins</span> <span style="color:var(--muted); font-size:0.7em; font-weight:normal;">${data.turns} turns, ${data.reason}</span>`;
+
+  // Group log entries by turn
+  let html = '';
+  let currentTurn = -1;
+  for (const entry of data.log) {
+    if (entry.turn !== currentTurn) {
+      currentTurn = entry.turn;
+      if (currentTurn === 0) {
+        html += `<div style="color:var(--muted); font-weight:700; margin-top:12px; margin-bottom:4px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px;">Setup</div>`;
+      } else {
+        html += `<div style="color:var(--muted); font-weight:700; margin-top:16px; margin-bottom:4px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px;">Turn ${currentTurn}</div>`;
+      }
+    }
+    const indent = entry.text.startsWith('  ') ? 'padding-left:16px; color:var(--muted);' : '';
+    const pColor = entry.player === 0 ? 'var(--green)' : entry.player === 1 ? 'var(--accent)' : '';
+    const dot = entry.player !== null && entry.player !== undefined ? `<span style="color:${pColor}; margin-right:6px;">●</span>` : '';
+    html += `<div style="${indent}">${dot}${entry.text}</div>`;
+  }
+  content.innerHTML = html;
+}
+
+function downloadGameLog() {
+  if (!currentGameLog) return;
+  let text = `${currentGameLog.deck_a} vs ${currentGameLog.deck_b}\n`;
+  text += `Winner: ${currentGameLog.winner} (${currentGameLog.reason}) in ${currentGameLog.turns} turns\n`;
+  text += '='.repeat(60) + '\n\n';
+
+  let currentTurn = -1;
+  for (const entry of currentGameLog.log) {
+    if (entry.turn !== currentTurn) {
+      currentTurn = entry.turn;
+      text += currentTurn === 0 ? '--- Setup ---\n' : `\n--- Turn ${currentTurn} ---\n`;
+    }
+    text += entry.text + '\n';
+  }
+
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${currentGameLog.deck_a}_vs_${currentGameLog.deck_b}.txt`.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // Saved Decks Logic

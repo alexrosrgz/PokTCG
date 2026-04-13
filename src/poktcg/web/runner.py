@@ -125,6 +125,60 @@ def _load_valid_saved_decks(names: list[str], saved_decks_data: dict) -> list[tu
 
 
 
+def _run_one_vs_one(
+    deck_names: list[str],
+    primary_deck: str | None,
+    opponent_names: list[str],
+    progress_callback: Callable[[str, dict], None],
+    saved_decks_data: dict | None = None,
+) -> dict:
+    """Play a single logged game between two decks."""
+    from poktcg.ai.heuristic_ai import HeuristicAI
+    from poktcg.engine.game import Game
+
+    saved_decks_data = saved_decks_data if saved_decks_data is not None else _load_saved_decks()
+    if not saved_decks_data:
+        raise ValueError("No saved decks found")
+
+    # Accept deck names from either deck_names list or primary_deck + opponent_names
+    if primary_deck and opponent_names:
+        name_a = primary_deck
+        name_b = opponent_names[0]
+    elif len(deck_names) >= 2:
+        name_a, name_b = deck_names[0], deck_names[1]
+    else:
+        raise ValueError("One vs One requires exactly 2 decks")
+
+    loaded = _load_valid_saved_decks([name_a, name_b], saved_decks_data)
+    deck_a = loaded[0][1]
+    deck_b = loaded[1][1]
+
+    progress_callback("status", {"message": f"Playing {name_a} vs {name_b}..."})
+
+    p0 = HeuristicAI(seed=42)
+    p1 = HeuristicAI(seed=10042)
+    game = Game(
+        p0, p1,
+        deck_a.to_list(), deck_b.to_list(),
+        seed=42,
+        enable_logging=True,
+        deck_names=(name_a, name_b),
+    )
+    result = game.play()
+
+    progress_callback("status", {"message": f"Game complete — {game.deck_names[result.winner]} wins in {result.turns} turns ({result.reason})"})
+
+    return {
+        "mode": "one_vs_one",
+        "deck_a": name_a,
+        "deck_b": name_b,
+        "winner": game.deck_names[result.winner],
+        "turns": result.turns,
+        "reason": result.reason,
+        "log": game.game_log,
+    }
+
+
 def _serialize_battle_matrix(participants: list[str], pairings: list[dict]) -> dict:
     lookup: dict[tuple[str, str], float] = {}
     for pairing in pairings:
@@ -162,14 +216,19 @@ def run_battleground(
     except (TypeError, ValueError) as exc:
         raise ValueError("Rounds must be an integer") from exc
 
-    if rounds < 1:
-        raise ValueError("Rounds must be at least 1")
-    if mode not in {"all_vs_all", "one_vs_all"}:
+    if mode not in {"all_vs_all", "one_vs_all", "one_vs_one"}:
         raise ValueError("Invalid battleground mode")
+
+    if mode != "one_vs_one":
+        if rounds < 1:
+            raise ValueError("Rounds must be at least 1")
 
     reset_card_db()
     db = get_card_db(sets=CARD_POOL_SETS["all"])
     progress_callback("status", {"message": f"Loaded {len(db)} cards for Battleground"})
+
+    if mode == "one_vs_one":
+        return _run_one_vs_one(deck_names, primary_deck, opponent_names, progress_callback, saved_decks_data)
 
     saved_decks_data = saved_decks_data if saved_decks_data is not None else _load_saved_decks()
     if not saved_decks_data:
