@@ -294,7 +294,13 @@
 
   <!-- Saved Decks View -->
   <div id="savedDecksPanel" style="display:none; padding:0;">
-    <div class="deck-tabs" id="savedDeckTabs" style="margin-bottom: 20px; display:flex; flex-wrap:wrap;"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+      <div class="deck-tabs" id="savedDeckTabs" style="margin:0; display:flex; flex-wrap:wrap;"></div>
+      <div>
+        <input type="file" id="importFileInput" accept=".json" style="display:none;" onchange="handleImportFile(event)">
+        <button class="mini-btn" style="background:var(--accent); box-shadow:0 2px 10px rgba(233,69,96,0.4);" onclick="document.getElementById('importFileInput').click()">+ Import Deck</button>
+      </div>
+    </div>
     <div class="deck-panel" id="savedDeckDisplay" style="display:none; padding:0; background:none;"></div>
   </div>
 
@@ -683,7 +689,7 @@ function renderDeck(deck, index, elId = 'deckDisplay', savedDeckName = null) {
   let html = `<div class="deck-header" style="align-items:flex-start;">
     <div>
       <div class="fitness">${winRateText} 
-        ${savedDeckName ? `<button class="delete-btn" style="color:var(--yellow); opacity:0.8" onclick="editSavedDeck('${savedDeckName.replace(/'/g, "\\'")}')">✎ Edit</button> <button class="delete-btn" onclick="deleteSavedDeck('${savedDeckName.replace(/'/g, "\\'")}')" title="Delete Deck">✕ Delete</button>` : ''}
+        ${savedDeckName ? `<button class="delete-btn" style="color:var(--yellow); opacity:0.8" onclick="editSavedDeck('${savedDeckName.replace(/'/g, "\\'")}')">✎ Edit</button> <button class="delete-btn" style="color:#5ba4cf; opacity:0.8" onclick="exportDeck('${savedDeckName.replace(/'/g, "\\'")}')" title="Export Deck">↗ Export</button> <button class="delete-btn" onclick="deleteSavedDeck('${savedDeckName.replace(/'/g, "\\'")}')" title="Delete Deck">✕ Delete</button>` : ''}
       </div>
       <div class="counts">${deck.total_cards} cards: ${deck.pokemon_count}P / ${deck.trainer_count}T / ${deck.energy_count}E</div>
     </div>`;
@@ -1243,6 +1249,115 @@ function editSavedDeck(name) {
   if (allCards.length > 0) {
     renderCustomDeck();
   }
+}
+
+function exportDeck(name) {
+  const deck = loadedSavedDecksData[name];
+  if (!deck || !deck.cards) return;
+
+  const exported = {
+    name,
+    cards: deck.cards.map(c => ({ id: c.id, name: c.name, count: c.count })),
+  };
+
+  const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function handleImportFile(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+
+  let data;
+  try {
+    const text = await file.text();
+    data = JSON.parse(text);
+  } catch (e) {
+    return alert('Invalid JSON file.');
+  }
+
+  const name = data.name;
+  if (!name || typeof name !== 'string') return alert('Missing deck name.');
+  if (!Array.isArray(data.cards) || !data.cards.length) return alert('Missing or empty cards list.');
+
+  let totalCards = 0;
+  const counts = {};
+  let hasBasic = false;
+
+  for (const entry of data.cards) {
+    if (!entry.id || !entry.count || typeof entry.count !== 'number' || entry.count < 1) {
+      return alert(`Invalid card entry: ${JSON.stringify(entry)}`);
+    }
+    counts[entry.id] = (counts[entry.id] || 0) + entry.count;
+    totalCards += entry.count;
+  }
+
+  if (totalCards !== 60) return alert(`Deck must have exactly 60 cards (has ${totalCards}).`);
+
+  // Validate against card database
+  let cardsDb = allCards;
+  if (!cardsDb.length) {
+    try {
+      const res = await fetch('/api/cards');
+      const dbData = await res.json();
+      cardsDb = dbData.cards;
+    } catch (e) {
+      return alert('Could not load card database for validation.');
+    }
+  }
+
+  const cardsPayload = [];
+  for (const [id, count] of Object.entries(counts)) {
+    const card = cardsDb.find(c => c.id === id);
+    if (!card) return alert(`Unknown card ID: ${id}`);
+    const isBasicEnergy = card.supertype === 'Energy' && card.subtypes.includes('Basic');
+    if (!isBasicEnergy && count > 4) return alert(`${card.name}: max 4 copies allowed (has ${count}).`);
+    if (card.supertype === 'Pokémon' && card.subtypes.includes('Basic')) hasBasic = true;
+    cardsPayload.push({ ...card, count });
+  }
+
+  if (!hasBasic) return alert('Deck must contain at least one Basic Pokémon.');
+
+  if (loadedSavedDecksData[name]) {
+    if (!confirm(`A deck named "${name}" already exists. Overwrite?`)) return;
+  }
+
+  let pCount = 0, tCount = 0, eCount = 0;
+  cardsPayload.forEach(c => {
+    if (c.supertype === 'Pokémon') pCount += c.count;
+    else if (c.supertype === 'Trainer') tCount += c.count;
+    else eCount += c.count;
+  });
+
+  try {
+    await fetch('/api/saved_decks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        deck: {
+          fitness: null,
+          total_cards: totalCards,
+          pokemon_count: pCount,
+          trainer_count: tCount,
+          energy_count: eCount,
+          cards: cardsPayload,
+        },
+      }),
+    });
+    loadSavedDecks();
+    switchMode('saved');
+    setTimeout(() => {
+      const tabs = document.getElementById('savedDeckTabs').querySelectorAll('button');
+      const targetTab = Array.from(tabs).find(b => b.textContent === name);
+      if (targetTab) targetTab.click();
+    }, 100);
+  } catch (e) { alert('Failed to save imported deck.'); }
 }
 
 loadSavedDecks();
