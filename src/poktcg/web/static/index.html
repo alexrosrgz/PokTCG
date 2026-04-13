@@ -419,9 +419,11 @@
     <div class="results-area" id="battleResultsArea">
       <div class="results-grid">
         <div class="matchup-panel full-width">
-          <h2>Standings</h2>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <h2>Standings</h2>
+            <div class="win-conditions" id="battleWinConditions" style="margin:0;"></div>
+          </div>
           <div id="battleStandingsTable"></div>
-          <div class="win-conditions" id="battleWinConditions" style="margin-top:16px;"></div>
         </div>
 
         <div class="matchup-panel full-width" id="battleMatrixPanel" style="display:none;">
@@ -748,9 +750,9 @@ function renderWinConditions(elId, conds) {
   }
 
   const condColors = {
-    'all prizes taken': 'var(--green)',
-    'no Pokémon remaining': 'var(--accent)',
-    'deck out': 'var(--yellow)',
+    'all prizes taken': '#a78bfa',
+    'no Pokémon remaining': '#38bdf8',
+    'deck out': '#fb923c',
     'max turns reached': 'var(--muted)',
   };
   const condLabels = {
@@ -1082,7 +1084,7 @@ function renderBattlePairings(pairings) {
     return;
   }
 
-  let html = '<table class="matchup"><tr><th>Matchup</th><th>Record</th></tr>';
+  let html = '<table class="matchup"><tr><th style="text-align:left">Matchup</th><th>Record</th></tr>';
   pairings.forEach(pairing => {
     html += `<tr>
       <td style="text-align:left">${pairing.deck_a} vs ${pairing.deck_b}</td>
